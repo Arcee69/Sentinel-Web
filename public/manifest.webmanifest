@@ -1,0 +1,45 @@
+{
+  "name": "SMHP Sentinel Connect",
+  "short_name": "Sentinel",
+  "description": "Field operations app for SMHP Sentinel agents — view assigned tasks, file reports, and flag incidents.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fbfbfc",
+  "theme_color": "#B34A1A",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Report an incident",
+      "short_name": "Incident",
+      "url": "/incidents/new"
+    },
+    {
+      "name": "My tasks",
+      "short_name": "Tasks",
+      "url": "/tasks"
+    }
+  ]
+}

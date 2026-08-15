@@ -1,0 +1,213 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   SMHP Sentinel Connect — tactical field theme.
+   Tokens mirror the Sentinel design system so agent output reads the same as
+   the back-office that consumes it.
+--------------------------------------------------------------------------- */
+:root {
+  --radius: 0.25rem;
+
+  --background: #f9fafc;
+  --foreground: #0c121a;
+  --surface: #ffffff;
+  --card: #ffffff;
+  --card-foreground: #0c121a;
+  --popover: #ffffff;
+  --popover-foreground: #0c121a;
+
+  --primary: #b74913;
+  --primary-foreground: #fdfbfa;
+  --secondary: #f1f4f7;
+  --secondary-foreground: #0c121a;
+  --muted: #f1f4f7;
+  --muted-foreground: #6c727a;
+  --accent: #f1f4f7;
+  --accent-foreground: #0c121a;
+
+  --destructive: #df2225;
+  --destructive-foreground: #fdfbfa;
+  --success: #32b364;
+  --success-foreground: #fdfbfa;
+  --warning: #ee8700;
+  --warning-foreground: #0c121a;
+
+  --border: #dbe0e6;
+  --input: #dbe0e6;
+  --ring: #b74913;
+
+  --console: #0c121a;
+  --console-foreground: #f7f9fa;
+}
+
+.dark {
+  --background: #080b12;
+  --foreground: #f7f9fa;
+  --surface: #11161f;
+  --card: #11161f;
+  --card-foreground: #f7f9fa;
+  --popover: #11161f;
+  --popover-foreground: #f7f9fa;
+
+  --primary: #d35e2c;
+  --primary-foreground: #080b12;
+  --secondary: #1c222b;
+  --secondary-foreground: #f7f9fa;
+  --muted: #1c222b;
+  --muted-foreground: #989fa8;
+  --accent: #1c222b;
+  --accent-foreground: #f7f9fa;
+
+  --destructive: #f9423d;
+  --destructive-foreground: #f7f9fa;
+  --success: #3aba6a;
+  --warning: #f8910e;
+  --warning-foreground: #080b12;
+
+  /* 8-digit hex keeps the translucency these two rely on. */
+  --border: #ffffff1f;
+  --input: #ffffff26;
+  --ring: #d35e2c;
+
+  --console: #020306;
+  --console-foreground: #f7f9fa;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-console: var(--console);
+  --color-console-foreground: var(--console-foreground);
+
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --radius-sm: var(--radius);
+  --radius-md: calc(var(--radius) * 2);
+  --radius-lg: calc(var(--radius) * 3);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+  }
+
+  /* Keep native controls in step with the active theme. */
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+  }
+
+  /* iOS zooms any field under 16px on focus — hold the floor. */
+  @supports (-webkit-touch-callout: none) {
+    input,
+    textarea,
+    select {
+      font-size: max(16px, 1em);
+    }
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .safe-bottom {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+  .safe-top {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+}
+
+/* Live-status pulse used by the GPS/queue indicators. */
+@keyframes tactical-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+
+.tactical-pulse {
+  animation: tactical-pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes tactical-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tactical-slide-up {
+  animation: tactical-slide-up 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tactical-pulse,
+  .tactical-slide-up {
+    animation: none;
+  }
+}
