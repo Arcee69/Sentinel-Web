@@ -5,9 +5,11 @@ import { latency, getSettings, setSettings, shouldFail } from "./simulator";
 import { INCIDENT_SUBJECT_TYPE } from "../../lib/constants";
 import type {
   Agent,
+  ElectionReport,
   Incident,
   IncidentSeverity,
   MediaItem,
+  PollingUnitStatus,
   Task,
   TaskReport,
   TaskStatus,
@@ -243,6 +245,78 @@ const routes: Route[] = [
 
   {
     method: "GET",
+    pattern: /^\/agent\/election-reports$/,
+    handle: ({ requireAuth }) => {
+      const agent = requireAuth();
+      return loadDb().electionReports.filter((r) => r.agentId === agent.id);
+    },
+  },
+
+  {
+    method: "POST",
+    pattern: /^\/agent\/election-reports$/,
+    handle: ({ body, files, requireAuth }) => {
+      const agent = requireAuth();
+
+      const bodyText = String(body.body ?? "").trim();
+      if (bodyText.length < 20) {
+        throw new HttpError(422, "Report is too short to be actionable.");
+      }
+
+      const accredited = optionalCount(body.accredited);
+      const votesCast = optionalCount(body.votesCast);
+
+      // The one figure the collation desk cannot reconcile after the fact.
+      if (accredited !== undefined && votesCast !== undefined && votesCast > accredited) {
+        throw new HttpError(422, "Votes cast can't exceed accredited voters.");
+      }
+
+      const taskId = body.taskId ? String(body.taskId) : undefined;
+
+      const report: ElectionReport = {
+        id: crypto.randomUUID(),
+        agentId: agent.id,
+        agent: agent.name,
+        category: "Election Report",
+        subject: String(body.subject ?? ""),
+        unit: String(body.unit ?? "").toUpperCase(),
+        state: agent.state,
+        lga: agent.lga,
+        ward: String(body.ward ?? agent.ward ?? ""),
+        location: `${agent.state}/${agent.lga}`,
+        unitStatus: body.unitStatus as PollingUnitStatus,
+        accredited,
+        votesCast,
+        body: bodyText,
+        media: storeMedia(body.mediaMeta, files),
+        taskId,
+        submittedAt: new Date().toISOString(),
+        sync: "synced",
+      };
+
+      mutateDb((db) => {
+        db.electionReports.unshift(report);
+
+        // Filing against an assigned task closes that task out, exactly as a
+        // task report does.
+        if (taskId) {
+          const target = db.tasks.find((t) => t.id === taskId);
+          if (target && target.status !== "Completed") {
+            target.status = "Completed";
+            target.completedAt = report.submittedAt;
+          }
+        }
+
+        const author = db.agents.find((a) => a.id === agent.id);
+        if (author) author.reports += 1;
+      });
+
+      return report;
+    },
+  },
+
+  {
+    method: "GET",
     pattern: /^\/agent\/incidents$/,
     handle: ({ requireAuth }) => {
       const agent = requireAuth();
@@ -340,6 +414,13 @@ function storeMedia(metaField: unknown, files: File[]): MediaItem[] {
     ...item,
     url: `https://cdn.sentinel.example/media/${item.id}`,
   }));
+}
+
+/** Multipart turns every value into a string; "" means "not supplied". */
+function optionalCount(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function parseCoords(value: unknown): { lat: number; lng: number } | undefined {

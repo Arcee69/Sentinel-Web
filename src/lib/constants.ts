@@ -2,6 +2,7 @@ import type {
   IncidentSeverity,
   IncidentStatus,
   IncidentType,
+  PollingUnitStatus,
   ReportType,
   TaskCategory,
   TaskPriority,
@@ -52,6 +53,33 @@ export const TASK_CATEGORIES: {
       "Late or missing materials",
     ],
   },
+];
+
+export const ELECTION_SUBJECTS =
+  TASK_CATEGORIES.find((c) => c.id === "Election Report")?.subjects ?? [];
+
+export const POLLING_UNIT_STATUSES: PollingUnitStatus[] = [
+  "Open",
+  "Not opened",
+  "Closed",
+  "Suspended",
+];
+
+export const POLLING_UNIT_STATUS_STYLES: Record<PollingUnitStatus, string> = {
+  Open: "bg-success/15 text-success border border-success/30",
+  "Not opened": "bg-warning/15 text-warning border border-warning/30",
+  Closed: "bg-muted text-muted-foreground border border-border",
+  Suspended: "bg-destructive/12 text-destructive border border-destructive/30",
+};
+
+/**
+ * Subjects that are meaningless without figures — the form makes the
+ * accreditation / votes-cast boxes required for these and optional elsewhere.
+ */
+export const ELECTION_SUBJECTS_NEEDING_FIGURES = [
+  "Ward voter accreditation",
+  "Votes cast at the ward",
+  "Result collation at ward",
 ];
 
 export const INCIDENT_SUBJECTS =

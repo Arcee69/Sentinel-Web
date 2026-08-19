@@ -2,6 +2,8 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "../layout/AppLayout";
 import AuthLayout from "../layout/AuthLayout";
 import ProtectedRoute, { PublicOnlyRoute } from "./ProtectedRoute";
+import Elections from "../pages/elections/Elections";
+import SubmitElectionReport from "../pages/elections/SubmitElectionReport";
 import ForgotPassword from "../pages/auth/ForgotPassword/ForgotPassword";
 import Login from "../pages/auth/Login/Login";
 import Home from "../pages/home/Home";
@@ -30,6 +32,8 @@ export default function Routers() {
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
           <Route path="/tasks/:id/report" element={<SubmitReport />} />
+          <Route path="/elections" element={<Elections />} />
+          <Route path="/elections/new" element={<SubmitElectionReport />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/incidents/new" element={<ReportIncident />} />
           <Route path="/profile" element={<Profile />} />

@@ -3,9 +3,11 @@ import apiInstance from "./instance";
 import { getList, getMethod, patchMethod, postMethod } from "./requests";
 import { toFormData } from "../lib/media";
 import type {
+  ElectionReport,
   Incident,
   IncidentSeverity,
   MediaItem,
+  PollingUnitStatus,
   ReportType,
   Session,
   Task,
@@ -139,6 +141,52 @@ export async function submitReport(
 
 export function fetchReports(): Promise<TaskReport[]> {
   return getList<TaskReport[]>(API.REPORTS);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Election reports                              */
+/* -------------------------------------------------------------------------- */
+
+export interface ElectionReportDraft {
+  subject: string;
+  unit: string;
+  ward: string;
+  unitStatus: PollingUnitStatus;
+  accredited?: number;
+  votesCast?: number;
+  body: string;
+  media: MediaItem[];
+  /** Set when the return answers an assigned Election Report task. */
+  taskId?: string;
+}
+
+export async function submitElectionReport(
+  draft: ElectionReportDraft,
+  onProgress?: ProgressHandler,
+): Promise<ElectionReport> {
+  const payload = {
+    subject: draft.subject,
+    unit: draft.unit,
+    ward: draft.ward,
+    unitStatus: draft.unitStatus,
+    accredited: draft.accredited,
+    votesCast: draft.votesCast,
+    body: draft.body,
+    taskId: draft.taskId,
+    mediaMeta: mediaMetaOf(draft.media),
+  };
+
+  const form = await toFormData(payload, draft.media);
+  const res = await apiInstance.post(
+    API.ELECTION_REPORTS,
+    form,
+    uploadConfig(onProgress),
+  );
+  return res.data.data as ElectionReport;
+}
+
+export function fetchElectionReports(): Promise<ElectionReport[]> {
+  return getList<ElectionReport[]>(API.ELECTION_REPORTS);
 }
 
 /* -------------------------------------------------------------------------- */

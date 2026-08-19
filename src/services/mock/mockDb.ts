@@ -1,4 +1,10 @@
-import type { Agent, Incident, Task, TaskReport } from "../../lib/types";
+import type {
+  Agent,
+  ElectionReport,
+  Incident,
+  Task,
+  TaskReport,
+} from "../../lib/types";
 
 /**
  * Seeded in-browser database standing in for the Sentinel backend.
@@ -14,7 +20,7 @@ import type { Agent, Incident, Task, TaskReport } from "../../lib/types";
  * so a stale copy would otherwise keep serving the previous credentials and
  * make a changed demo account look broken.
  */
-const STORE_KEY = "sentinel.mockdb.v2";
+const STORE_KEY = "sentinel.mockdb.v3";
 
 /** Demo credential — any seeded agent's email or phone works with this. */
 export const DEMO_PASSWORD = "password";
@@ -23,6 +29,7 @@ export interface MockDb {
   agents: Agent[];
   tasks: Task[];
   reports: TaskReport[];
+  electionReports: ElectionReport[];
   incidents: Incident[];
   /** Reset codes issued by the forgot-password flow, keyed by identifier. */
   resetCodes: Record<string, string>;
@@ -233,6 +240,45 @@ function seed(): MockDb {
     },
   ];
 
+  const electionReports: ElectionReport[] = [
+    {
+      id: "e1",
+      agentId: agent.id,
+      agent: agent.name,
+      category: "Election Report",
+      subject: "Polling unit opening status",
+      unit: "AN/ON/04/012",
+      state: agent.state,
+      lga: agent.lga,
+      ward: "Onitsha North 04",
+      location: `${agent.state}/${agent.lga}`,
+      unitStatus: "Open",
+      body: "Unit opened at 08:15, thirty minutes behind schedule. All six party agents present, BVAS booted on the first attempt and queue of roughly 60 voters at opening.",
+      media: [],
+      submittedAt: hoursAgo(9),
+      sync: "synced",
+    },
+    {
+      id: "e2",
+      agentId: agent.id,
+      agent: agent.name,
+      category: "Election Report",
+      subject: "Ward voter accreditation",
+      unit: "AN/ON/04/007",
+      state: agent.state,
+      lga: agent.lga,
+      ward: "Onitsha North 04",
+      location: `${agent.state}/${agent.lga}`,
+      unitStatus: "Open",
+      accredited: 412,
+      votesCast: 388,
+      body: "Accreditation closed at 14:00 with 412 voters verified against a register of 690. Presiding officer posted the figures; photographed for the record.",
+      media: [],
+      submittedAt: hoursAgo(4),
+      sync: "synced",
+    },
+  ];
+
   const incidents: Incident[] = [
     {
       id: "i1",
@@ -270,13 +316,26 @@ function seed(): MockDb {
     },
   ];
 
-  return { agents: [agent], tasks, reports, incidents, resetCodes: {} };
+  return {
+    agents: [agent],
+    tasks,
+    reports,
+    electionReports,
+    incidents,
+    resetCodes: {},
+  };
 }
 
 export function loadDb(): MockDb {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (raw) return JSON.parse(raw) as MockDb;
+    if (raw) {
+      const db = JSON.parse(raw) as MockDb;
+      // A copy written before a collection existed would break the routes
+      // that push into it.
+      db.electionReports ??= [];
+      return db;
+    }
   } catch {
     /* corrupt payload — fall through to a fresh seed */
   }

@@ -1,9 +1,11 @@
 import { STORES, idbDelete, idbGetAll, idbPut } from "./idb";
 import type { OutboxItem, OutboxKind, TaskStatus } from "./types";
 import {
+  submitElectionReport,
   submitIncident,
   submitReport,
   updateTaskStatus,
+  type ElectionReportDraft,
   type IncidentDraft,
   type ReportDraft,
 } from "../services/agentService";
@@ -99,6 +101,8 @@ function dispatch(item: OutboxItem): Promise<unknown> {
   switch (item.kind) {
     case "report":
       return submitReport(item.payload as ReportDraft);
+    case "election-report":
+      return submitElectionReport(item.payload as ElectionReportDraft);
     case "incident":
       return submitIncident(item.payload as IncidentDraft);
     case "task-status": {

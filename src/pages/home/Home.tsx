@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardList, FileText, MapPin, TriangleAlert } from "lucide-react";
+import { ClipboardList, FileText, MapPin, TriangleAlert, Vote } from "lucide-react";
 import ProgressRing from "../../components/ProgressRing";
 import { FeaturedTaskCard, TaskRow } from "../../components/TaskCard";
 import { EmptyState, ErrorState, Skeleton } from "../../components/ui/States";
@@ -83,7 +83,29 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="space-y-3 px-4 py-5">
+      <div className="grid grid-cols-2 gap-2.5 px-4 pt-5">
+        <Link
+          to="/elections/new"
+          className="flex flex-col items-center justify-center gap-2 rounded-sm border border-primary/30 bg-primary/10 py-3.5 font-mono text-[10px] font-bold uppercase tracking-widest text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+        >
+          <Vote className="size-4" aria-hidden />
+          Election Report
+        </Link>
+
+        <Link
+          to="/incidents/new"
+          className="relative flex flex-col items-center justify-center gap-2 rounded-sm border border-destructive/30 bg-destructive/10 py-3.5 font-mono text-[10px] font-bold uppercase tracking-widest text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground"
+        >
+          <span
+            className="absolute right-2 top-2 size-2 animate-pulse rounded-full bg-destructive"
+            aria-hidden
+          />
+          <TriangleAlert className="size-4" aria-hidden />
+          Report Incident
+        </Link>
+      </div>
+
+      <div className="space-y-3 px-4 pb-5 pt-4">
         <div className="flex items-center justify-between px-1">
           <p className="font-mono text-[10px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
             Active Operations
@@ -125,16 +147,6 @@ export default function Home() {
         ))}
       </div>
 
-      <div className="px-4 pb-5">
-        <Link
-          to="/incidents/new"
-          className="flex w-full items-center justify-center gap-3 rounded-sm border border-destructive/30 bg-destructive/10 py-3.5 font-mono text-xs font-bold uppercase tracking-widest text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground"
-        >
-          <TriangleAlert className="size-4" aria-hidden />
-          Report Incident
-          <span className="size-2 animate-pulse rounded-full bg-destructive" aria-hidden />
-        </Link>
-      </div>
     </>
   );
 }

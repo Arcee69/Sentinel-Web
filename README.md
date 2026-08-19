@@ -1,8 +1,8 @@
 # SMHP Sentinel Connect — Agent PWA
 
 Installable field-operations app for Sentinel agents: see the tasks the admin
-assigned you, file reports against them, and flag incidents with photo and video
-evidence — including while offline.
+assigned you, file reports against them, file election-day returns, and flag
+incidents with photo and video evidence — including while offline.
 
 Companion to the [Sentinel back office](https://sentinel-backoffice.netlify.app/),
 which is where agent accounts and tasks are created. **There is no sign-up** —
@@ -66,7 +66,7 @@ adapter so you can see how each screen behaves against a real server:
 | Failure rate | Error states with a working **Retry** |
 | Server unreachable | Transport-level failure and the offline outbox |
 | Expire my session | A `401` → token cleared → redirect to `/login?expired=1` |
-| Reset demo data | Restores the seeded tasks, reports and incidents |
+| Reset demo data | Restores the seeded tasks, reports, election returns and incidents |
 
 The button turns amber whenever conditions are degraded, so a demo never
 silently runs in a broken state. It disappears entirely once
@@ -95,6 +95,8 @@ Every response uses one envelope:
 | PATCH | `/agent/tasks/:id/status` | `status` | updated `Task` |
 | GET | `/agent/reports` | — | `TaskReport[]` |
 | POST | `/agent/reports` | multipart | created `TaskReport` |
+| GET | `/agent/election-reports` | — | `ElectionReport[]` |
+| POST | `/agent/election-reports` | multipart | created `ElectionReport` |
 | GET | `/agent/incidents` | — | `Incident[]` |
 | POST | `/agent/incidents` | multipart | created `Incident` |
 
@@ -125,13 +127,19 @@ means renaming it in the admin too.
   (`Pending` · `In Progress` · `Completed`), `assigneeId`, `state`, `lga`, `due`.
 - **Report** — `type` (`Rally` · `Door-to-Door` · `Town Hall` · `Media` ·
   `Distribution`), `body`, `respondents`, `media`, `location`.
+- **Election report** — a ward/polling-unit return filed from the Election tab,
+  with or without an assigned task. `subject` (from the Election Report list),
+  `unit`, `ward`, `unitStatus` (`Open` · `Not opened` · `Closed` · `Suspended`),
+  `accredited`, `votesCast`, `body`, `media`, optional `taskId`.
 - **Incident** — `type` (`Violence` · `Delay` · `Malpractice` · `Logistics`),
   `severity`, `unit` (polling unit code), `status` (`Open` · `Escalated` ·
   `Resolved`), `media`, optional GPS fix.
 
 The category → subject lists and the subject → incident-type mapping are in
 [`src/lib/constants.ts`](src/lib/constants.ts). Critical incidents are filed as
-`Escalated` rather than `Open`.
+`Escalated` rather than `Open`. An election report carrying a `taskId` closes
+that task out, exactly as a task report does, and `votesCast` may never exceed
+`accredited`.
 
 ## Offline behaviour
 
@@ -169,7 +177,7 @@ src/
   context/       auth / offline / theme — hooks in .ts, providers in .tsx
   layout/        PhoneFrame, AuthLayout, AppLayout
   lib/           types, constants, formatting, IndexedDB, outbox, media
-  pages/         auth · home · tasks · incidents · profile
+  pages/         auth · home · tasks · elections · incidents · profile
   routers/       route table and the protected/public gates
   services/      API facade, axios instance, mock adapter + simulator
 ```
@@ -181,6 +189,6 @@ src/
   and `.dark` in [`index.css`](src/index.css) — every component reads them
   through Tailwind, so a rebrand is an edit to those two blocks. The light/dark
   toggle lives in Profile.
-- The seeded database persists in `localStorage` under `sentinel.mockdb.v2`.
+- The seeded database persists in `localStorage` under `sentinel.mockdb.v3`.
   Bump the key in [`mockDb.ts`](src/services/mock/mockDb.ts) whenever the seed
   changes, or existing browsers will keep serving the old copy.

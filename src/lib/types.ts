@@ -105,6 +105,54 @@ export interface TaskReport {
 }
 
 /* -------------------------------------------------------------------------- */
+/*                              Election reports                              */
+/* -------------------------------------------------------------------------- */
+
+/** State of a polling unit at the moment the agent filed. */
+export type PollingUnitStatus =
+  | "Open"
+  | "Not opened"
+  | "Closed"
+  | "Suspended";
+
+/**
+ * A ward/polling-unit return filed from the Election tab.
+ *
+ * Distinct from `TaskReport`: an election report can be filed on its own on
+ * election day, without waiting for the admin to assign a task. When it does
+ * answer an assigned task, `taskId` links the two and closes that task out.
+ */
+export interface ElectionReport {
+  id: string;
+  agentId: string;
+  /** Denormalised agent display name, matching the admin field-report feed. */
+  agent: string;
+  /** Always "Election Report" — kept so the admin feed can bucket uniformly. */
+  category: TaskCategory;
+  /** One of the fixed Election Report subjects. */
+  subject: string;
+  /** Polling unit code, e.g. "AN/ON/04/012". */
+  unit: string;
+  state: string;
+  lga: string;
+  ward: string;
+  /** Composed as "State/LGA" for the admin feed. */
+  location: string;
+  unitStatus: PollingUnitStatus;
+  /** Voters accredited at the unit, when the subject calls for a number. */
+  accredited?: number;
+  /** Ballots cast at the unit — never more than `accredited`. */
+  votesCast?: number;
+  /** The narrative body of the return. */
+  body: string;
+  media: MediaItem[];
+  /** Set when the report answers an assigned Election Report task. */
+  taskId?: string;
+  submittedAt: string;
+  sync: SyncStatus;
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                  Incidents                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -161,7 +209,11 @@ export interface MediaItem {
 /** Where a locally-created record stands relative to the server. */
 export type SyncStatus = "synced" | "queued" | "syncing" | "failed";
 
-export type OutboxKind = "report" | "incident" | "task-status";
+export type OutboxKind =
+  | "report"
+  | "election-report"
+  | "incident"
+  | "task-status";
 
 export interface OutboxItem {
   id: string;

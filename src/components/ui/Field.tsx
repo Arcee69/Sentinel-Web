@@ -195,11 +195,14 @@ export function TextAreaField({
 
 /* -------------------------------------------------------------------------- */
 
+/** A bare string is both the value and the label; pairs let them differ. */
+export type SelectOption = string | { value: string; label: string };
+
 interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "id"> {
   label: string;
   hint?: string;
   error?: string;
-  options: readonly string[];
+  options: readonly SelectOption[];
   placeholder?: string;
 }
 
@@ -236,11 +239,16 @@ export function SelectField({
           }}
         >
           {placeholder && <option value="">{placeholder}</option>}
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
+          {options.map((option) => {
+            const { value, label: text } =
+              typeof option === "string" ? { value: option, label: option } : option;
+
+            return (
+              <option key={value} value={value}>
+                {text}
+              </option>
+            );
+          })}
         </select>
       )}
     </Field>

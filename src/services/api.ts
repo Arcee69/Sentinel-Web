@@ -12,4 +12,5 @@ export const TASKS = "/agent/tasks";
 export const TASK_STATUS = (id: string) => `/agent/tasks/${id}/status`;
 
 export const REPORTS = "/agent/reports";
+export const ELECTION_REPORTS = "/agent/election-reports";
 export const INCIDENTS = "/agent/incidents";

@@ -1,10 +1,17 @@
 import { NavLink } from "react-router-dom";
-import { CircleUserRound, ClipboardList, House, TriangleAlert } from "lucide-react";
+import {
+  CircleUserRound,
+  ClipboardList,
+  House,
+  TriangleAlert,
+  Vote,
+} from "lucide-react";
 import { cn } from "../lib/format";
 
 const ITEMS = [
   { to: "/", label: "Home", Icon: House, end: true },
   { to: "/tasks", label: "Tasks", Icon: ClipboardList, end: false },
+  { to: "/elections", label: "Election", Icon: Vote, end: false },
   { to: "/incidents", label: "Incidents", Icon: TriangleAlert, end: false },
   { to: "/profile", label: "Profile", Icon: CircleUserRound, end: false },
 ];
