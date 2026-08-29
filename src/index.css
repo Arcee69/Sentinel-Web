@@ -211,3 +211,162 @@
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Landing page palette.
+
+   The marketing site runs a blue "signal" primary rather than the field app's
+   ember. Tokens are namespaced `--l-*` and defined only on :root — never in
+   .dark — so the landing page stays light regardless of the agent's theme
+   toggle, and nothing here can bleed into the app's own surfaces.
+--------------------------------------------------------------------------- */
+:root {
+  --l-background: #f8fafd;
+  --l-foreground: #171e29;
+  --l-panel: #ffffff;
+  --l-panel-2: #f0f4f7;
+  --l-hairline: #cdd1d6;
+  --l-border: #d8dde2;
+  --l-muted: #edf1f5;
+  --l-muted-foreground: #5c646e;
+  --l-accent: #e7eef5;
+
+  --l-primary: #007a97;
+  --l-primary-foreground: #fafcfe;
+  --l-signal: #007b92;
+  --l-signal-ink: #006277;
+
+  --l-ember: #d25205;
+  --l-ember-ink: #a63500;
+  --l-amber: #da8b00;
+  --l-warning: #cd7d00;
+  --l-warning-ink: #8c4b00;
+  --l-iris: #6b61c4;
+  --l-teal: #00867a;
+  --l-positive: #06915f;
+  --l-positive-ink: #00673f;
+  --l-critical: #d02b34;
+  --l-critical-ink: #a91322;
+}
+
+@theme inline {
+  --color-l-background: var(--l-background);
+  --color-l-foreground: var(--l-foreground);
+  --color-l-panel: var(--l-panel);
+  --color-l-panel-2: var(--l-panel-2);
+  --color-l-hairline: var(--l-hairline);
+  --color-l-border: var(--l-border);
+  --color-l-muted: var(--l-muted);
+  --color-l-muted-foreground: var(--l-muted-foreground);
+  --color-l-accent: var(--l-accent);
+
+  --color-l-primary: var(--l-primary);
+  --color-l-primary-foreground: var(--l-primary-foreground);
+  --color-l-signal: var(--l-signal);
+  --color-l-signal-ink: var(--l-signal-ink);
+
+  --color-l-ember: var(--l-ember);
+  --color-l-ember-ink: var(--l-ember-ink);
+  --color-l-amber: var(--l-amber);
+  --color-l-warning: var(--l-warning);
+  --color-l-warning-ink: var(--l-warning-ink);
+  --color-l-iris: var(--l-iris);
+  --color-l-teal: var(--l-teal);
+  --color-l-positive: var(--l-positive);
+  --color-l-positive-ink: var(--l-positive-ink);
+  --color-l-critical: var(--l-critical);
+  --color-l-critical-ink: var(--l-critical-ink);
+
+  /* The marketing site runs its own type system: Space Grotesk for display,
+     IBM Plex Sans for prose, JetBrains Mono for labels and readouts. */
+  --font-l-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-l-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-l-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Faint blueprint grid used behind the hero and key section breaks. */
+.l-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--l-border) 42%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--l-border) 42%, transparent) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+@keyframes l-rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.l-rise { animation: l-rise 620ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .l-rise { animation: none; }
+}
+
+/* Landing cards: a 2px coloured cap over a barely-there wash of the same hue. */
+.l-card {
+  position: relative;
+  background-color: var(--l-panel);
+  border: 1px solid var(--l-border);
+  overflow: hidden;
+}
+
+.l-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(to right, var(--l-card-accent, var(--l-signal)), transparent);
+}
+
+.l-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    140deg,
+    color-mix(in srgb, var(--l-card-accent, var(--l-signal)) 9%, transparent),
+    transparent 62%
+  );
+}
+
+.l-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Hero map: each monitoring node breathes on its own cycle. */
+@keyframes l-map-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.6);
+  }
+}
+
+.l-map-pulse {
+  animation-name: l-map-pulse;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-map-pulse {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
+/* Signal rows: a faint wash of the row's own hue fading into the panel. */
+.l-tint-cell {
+  background-image: linear-gradient(
+    158deg,
+    color-mix(in oklab, var(--l-tint, var(--l-signal)) 18%, var(--l-panel)) 0%,
+    var(--l-panel) 72%
+  );
+}

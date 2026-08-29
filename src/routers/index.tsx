@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "../layout/AppLayout";
 import AuthLayout from "../layout/AuthLayout";
 import ProtectedRoute, { PublicOnlyRoute } from "./ProtectedRoute";
+import Landing from "../pages/landing/Landing";
 import Elections from "../pages/elections/Elections";
 import SubmitElectionReport from "../pages/elections/SubmitElectionReport";
 import ForgotPassword from "../pages/auth/ForgotPassword/ForgotPassword";
@@ -17,6 +18,9 @@ import Tasks from "../pages/tasks/Tasks";
 export default function Routers() {
   return (
     <Routes>
+      {/* Public marketing site — always reachable, signed in or not. */}
+      <Route path="/" element={<Landing />} />
+
       {/* Auth — no self-registration; accounts come from the back office. */}
       <Route element={<PublicOnlyRoute />}>
         <Route element={<AuthLayout />}>
@@ -28,7 +32,7 @@ export default function Routers() {
       {/* Field screens */}
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-          <Route index element={<Home />} />
+          <Route path="/app" element={<Home />} />
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
           <Route path="/tasks/:id/report" element={<SubmitReport />} />

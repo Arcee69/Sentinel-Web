@@ -24,7 +24,7 @@ export default function Login() {
   // The 401 interceptor sends expired sessions here — say why they were kicked.
   const expired = searchParams.get("expired") === "1";
 
-  const from = (location.state as { from?: string } | null)?.from ?? "/";
+  const from = (location.state as { from?: string } | null)?.from ?? "/app";
 
   const formik = useFormik({
     initialValues: { email: "", password: "" },

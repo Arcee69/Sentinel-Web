@@ -17,5 +17,5 @@ export default function ProtectedRoute() {
 /** Keeps signed-in agents out of the auth screens. */
 export function PublicOnlyRoute() {
   const { isAuthenticated } = useAuth();
-  return isAuthenticated ? <Navigate to="/" replace /> : <Outlet />;
+  return isAuthenticated ? <Navigate to="/app" replace /> : <Outlet />;
 }

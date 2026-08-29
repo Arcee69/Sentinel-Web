@@ -3,7 +3,7 @@
   "short_name": "Sentinel",
   "description": "Field operations app for SMHP Sentinel agents — view assigned tasks, file reports, and flag incidents.",
   "id": "/",
-  "start_url": "/",
+  "start_url": "/app",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
