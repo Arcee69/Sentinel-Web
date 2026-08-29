@@ -1,5 +1,4 @@
-import { Link } from "react-router-dom";
-import { ArrowRight, Activity, AlertTriangle, Users } from "lucide-react";
+import { Activity, AlertTriangle, Users } from "lucide-react";
 import { Section, SectionHead } from "../ui";
 
 const METRICS = [
