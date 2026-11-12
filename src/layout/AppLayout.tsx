@@ -2,6 +2,7 @@ import { Outlet } from "react-router-dom";
 import BottomNav from "../components/BottomNav";
 import InstallPrompt from "../components/InstallPrompt";
 import StatusStrip from "../components/StatusStrip";
+import { useHeartbeat } from "../hooks/useHeartbeat";
 import PhoneFrame from "./PhoneFrame";
 
 /**
@@ -9,6 +10,8 @@ import PhoneFrame from "./PhoneFrame";
  * content in the middle, primary navigation pinned to the bottom.
  */
 export default function AppLayout() {
+  useHeartbeat();
+
   return (
     <PhoneFrame>
       <InstallPrompt />

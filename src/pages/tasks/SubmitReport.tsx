@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useFormik } from "formik";
 import * as Yup from "yup";
 import { CloudOff } from "lucide-react";
@@ -8,13 +8,13 @@ import { toast } from "sonner";
 import MediaPicker from "../../components/MediaPicker";
 import PageHeader from "../../components/PageHeader";
 import Button from "../../components/ui/Button";
-import { SelectField, TextAreaField, TextField } from "../../components/ui/Field";
+import { CheckboxField, SelectField, TextAreaField, TextField } from "../../components/ui/Field";
 import { ErrorState, Loading } from "../../components/ui/States";
-import { useAgent } from "../../context/auth";
+import { useWorkspace } from "../../context/auth";
 import { useOffline } from "../../context/offline";
+import { useFieldSubmission } from "../../hooks/useFieldSubmission";
 import { REPORT_TYPES } from "../../lib/constants";
 import * as service from "../../services/agentService";
-import { errorMessage } from "../../services/instance";
 import UploadProgress from "../../components/UploadProgress";
 import type { MediaItem, ReportType } from "../../lib/types";
 
@@ -33,56 +33,50 @@ const schema = Yup.object({
 
 export default function SubmitReport() {
   const { id = "" } = useParams();
-  const agent = useAgent();
+  const workspace = useWorkspace();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const { isOnline, queue } = useOffline();
+  const { isOnline } = useOffline();
   const [media, setMedia] = useState<MediaItem[]>([]);
-  const [progress, setProgress] = useState<number | null>(null);
 
   const taskQuery = useQuery({
     queryKey: ["task", id],
-    queryFn: () => service.fetchTask(id),
+    queryFn: () => service.fetchTask(id, workspace),
     enabled: Boolean(id),
   });
 
-  const submitMutation = useMutation({
-    mutationFn: async (draft: service.ReportDraft) => {
-      if (!isOnline) {
-        await queue("report", draft);
-        return null;
-      }
-      setProgress(0);
-      return service.submitReport(draft, setProgress);
-    },
-    onSuccess: async () => {
-      toast.success(
-        isOnline
-          ? "Report submitted"
-          : "Saved offline — it'll sync automatically when you're back on a network",
-      );
-      await queryClient.invalidateQueries({ queryKey: ["tasks", agent.id] });
-      await queryClient.invalidateQueries({ queryKey: ["task", id] });
-      await queryClient.invalidateQueries({ queryKey: ["reports", agent.id] });
-      navigate(`/tasks/${id}`, { replace: true });
-    },
-    onError: (error) => {
-      setProgress(null);
-      toast.error(errorMessage(error, "Couldn't submit the report. Try again."));
-    },
+  const { mutation: submitMutation, progress } = useFieldSubmission({
+    kind: "field-report",
+    sentMessage: "Report submitted",
+    invalidate: [],
+    onDone: () => navigate(`/tasks/${id}`, { replace: true }),
   });
 
   const formik = useFormik({
-    initialValues: { type: "" as ReportType | "", body: "", respondents: "" },
+    initialValues: { type: "" as ReportType | "", body: "", respondents: "", complete: true },
     validationSchema: schema,
-    onSubmit: (values) =>
-      submitMutation.mutateAsync({
+    onSubmit: (values) => {
+      const assignmentId = taskQuery.data?.assignmentId ?? workspace.assignmentId;
+      if (!assignmentId) {
+        toast.error("You have no active assignment. Contact your supervisor.");
+        return;
+      }
+
+      const draft: service.FieldReportDraft = {
+        clientSubmissionId: crypto.randomUUID(),
+        observedAt: new Date().toISOString(),
+        campaignId: workspace.campaignId,
+        assignmentId,
         taskId: id,
-        type: values.type as ReportType,
-        body: values.body.trim(),
-        respondents: values.respondents === "" ? undefined : Number(values.respondents),
+        method: values.type as ReportType,
+        narrative: values.body.trim(),
+        peopleReached: values.respondents === "" ? undefined : Number(values.respondents),
         media,
-      }),
+      };
+
+      return submitMutation
+        .mutateAsync({ draft, completeTaskId: values.complete ? id : undefined })
+        .catch(() => undefined);
+    },
   });
 
   if (taskQuery.isPending) {
@@ -119,9 +113,9 @@ export default function SubmitReport() {
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
             Reporting on
           </p>
-          <p className="mt-0.5 text-xs font-bold">{task.subject}</p>
+          <p className="mt-0.5 text-xs font-bold">{task.subject ?? task.title}</p>
           <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-            {task.category} · {task.ward ?? task.lga}, {task.state}
+            {task.category ?? "General task"} · {task.location}
           </p>
         </div>
 
@@ -175,6 +169,19 @@ export default function SubmitReport() {
           onChange={setMedia}
           label="Photos & video"
           hint="Optional. Attach photos or short clips that back up your findings."
+        />
+
+        <CheckboxField
+          name="complete"
+          label="Mark this task complete"
+          hint={
+            isOnline
+              ? "Untick if you'll file more reports against this task."
+              : "Offline: finish the task from its screen once this report has synced."
+          }
+          checked={formik.values.complete && isOnline}
+          disabled={!isOnline}
+          onChange={formik.handleChange}
         />
 
         <UploadProgress percent={progress} visible={submitMutation.isPending && media.length > 0} />

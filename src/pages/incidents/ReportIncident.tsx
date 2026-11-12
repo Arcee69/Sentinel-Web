@@ -1,6 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useFormik } from "formik";
 import * as Yup from "yup";
 import { CloudOff, Crosshair, TriangleAlert } from "lucide-react";
@@ -8,18 +7,19 @@ import { toast } from "sonner";
 import MediaPicker from "../../components/MediaPicker";
 import PageHeader from "../../components/PageHeader";
 import Button from "../../components/ui/Button";
-import { SelectField, TextAreaField, TextField } from "../../components/ui/Field";
-import { useAgent } from "../../context/auth";
+import { CheckboxField, SelectField, TextAreaField, TextField } from "../../components/ui/Field";
+import { useAgent, useWorkspace } from "../../context/auth";
 import { useOffline } from "../../context/offline";
+import { useFieldSubmission } from "../../hooks/useFieldSubmission";
+import { useTasks } from "../../hooks/useTasks";
 import {
   INCIDENT_SEVERITIES,
   INCIDENT_SUBJECTS,
-  INCIDENT_SUBJECT_TYPE,
   SEVERITY_STYLES,
+  SUBJECT_CODE,
 } from "../../lib/constants";
 import { cn } from "../../lib/format";
 import * as service from "../../services/agentService";
-import { errorMessage } from "../../services/instance";
 import UploadProgress from "../../components/UploadProgress";
 import type { IncidentSeverity, MediaItem } from "../../lib/types";
 
@@ -29,7 +29,7 @@ const schema = Yup.object({
   unit: Yup.string()
     .trim()
     .required("Enter the polling unit code")
-    .matches(/^[A-Za-z0-9/\- ]{3,}$/, "Use the code format, e.g. AN/ON/04/012"),
+    .min(3, "Enter the full polling unit code"),
   description: Yup.string()
     .trim()
     .min(20, "Give enough detail for the command desk to act")
@@ -38,37 +38,28 @@ const schema = Yup.object({
 
 export default function ReportIncident() {
   const agent = useAgent();
+  const workspace = useWorkspace();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const { isOnline, queue } = useOffline();
+  const { isOnline } = useOffline();
+  const [searchParams] = useSearchParams();
 
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | undefined>();
   const [locating, setLocating] = useState(false);
-  const [progress, setProgress] = useState<number | null>(null);
 
-  const submitMutation = useMutation({
-    mutationFn: async (draft: service.IncidentDraft) => {
-      if (!isOnline) {
-        await queue("incident", draft);
-        return null;
-      }
-      setProgress(0);
-      return service.submitIncident(draft, setProgress);
-    },
-    onSuccess: async () => {
-      toast.success(
-        isOnline
-          ? "Incident reported — the command desk has been notified"
-          : "Saved offline — it'll be sent the moment you have signal",
-      );
-      await queryClient.invalidateQueries({ queryKey: ["incidents", agent.id] });
-      navigate("/incidents", { replace: true });
-    },
-    onError: (error) => {
-      setProgress(null);
-      toast.error(errorMessage(error, "Couldn't file the incident. Try again."));
-    },
+  // Arriving from an Incident Report task preselects its allegation.
+  const taskId = searchParams.get("task") ?? "";
+  const linkedTask = useTasks().data?.find((task) => task.id === taskId);
+  const taskSubject =
+    linkedTask?.subject && INCIDENT_SUBJECTS.includes(linkedTask.subject)
+      ? linkedTask.subject
+      : "";
+
+  const { mutation: submitMutation, progress } = useFieldSubmission({
+    kind: "incident-report",
+    sentMessage: "Incident reported — the command desk has it",
+    invalidate: [["incidents", workspace.campaignId]],
+    onDone: () => navigate("/incidents", { replace: true }),
   });
 
   const formik = useFormik({
@@ -77,18 +68,37 @@ export default function ReportIncident() {
       severity: "" as IncidentSeverity | "",
       unit: "",
       description: "",
+      complete: true,
     },
     validationSchema: schema,
-    onSubmit: (values) =>
-      submitMutation.mutateAsync({
-        subject: values.subject,
+    onSubmit: (values) => {
+      const draft: service.IncidentDraft = {
+        clientSubmissionId: crypto.randomUUID(),
+        occurredAt: new Date().toISOString(),
+        campaignId: workspace.campaignId,
+        incidentType: SUBJECT_CODE[values.subject],
         severity: values.severity as IncidentSeverity,
-        unit: values.unit.trim().toUpperCase(),
+        unitCode: values.unit.trim().toUpperCase(),
         description: values.description.trim(),
-        media,
         coords,
-      }),
+        media,
+      };
+
+      return submitMutation
+        .mutateAsync({
+          draft,
+          completeTaskId: taskId && values.complete ? taskId : undefined,
+        })
+        .catch(() => undefined);
+    },
   });
+
+  // The task list can land after first render; fill the subject only while it's blank.
+  const { setFieldValue } = formik;
+  const subjectBlank = formik.values.subject === "";
+  useEffect(() => {
+    if (taskSubject && subjectBlank) void setFieldValue("subject", taskSubject);
+  }, [taskSubject, subjectBlank, setFieldValue]);
 
   /** Attaches a GPS fix so the desk can dispatch to the right place. */
   const attachLocation = () => {
@@ -115,10 +125,6 @@ export default function ReportIncident() {
     );
   };
 
-  const derivedType = formik.values.subject
-    ? INCIDENT_SUBJECT_TYPE[formik.values.subject]
-    : null;
-
   return (
     <>
       <PageHeader eyebrow="Field report" title="Report Incident" back />
@@ -127,8 +133,8 @@ export default function ReportIncident() {
         <p className="flex items-start gap-2 rounded-sm border border-destructive/30 bg-destructive/8 px-3 py-2.5 text-[11px] leading-snug">
           <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-destructive" aria-hidden />
           <span>
-            Reports marked <strong>Critical</strong> are escalated to the command desk
-            immediately. If anyone is in danger, contact emergency services first.
+            Reports marked <strong>Critical</strong> can raise an alert on the command
+            desk. If anyone is in danger, contact emergency services first.
           </span>
         </p>
 
@@ -149,7 +155,6 @@ export default function ReportIncident() {
           onChange={formik.handleChange}
           onBlur={formik.handleBlur}
           error={formik.touched.subject ? formik.errors.subject : undefined}
-          hint={derivedType ? `Filed under ${derivedType}` : undefined}
           required
         />
 
@@ -185,9 +190,9 @@ export default function ReportIncident() {
         <TextField
           label="Polling unit code"
           name="unit"
-          placeholder="AN/ON/04/012"
+          placeholder="e.g. DEMO-A-001"
           autoCapitalize="characters"
-          hint={`Your sector: ${agent.lga}, ${agent.state}`}
+          hint={`Your sector: ${agent.sector}`}
           value={formik.values.unit}
           onChange={formik.handleChange}
           onBlur={formik.handleBlur}
@@ -231,6 +236,21 @@ export default function ReportIncident() {
             </p>
           )}
         </div>
+
+        {taskId && linkedTask && (
+          <CheckboxField
+            name="complete"
+            label="Mark the linked task complete"
+            hint={
+              isOnline
+                ? `Closes "${linkedTask.title}" once this report is filed.`
+                : "Offline: finish the task from its screen once this report has synced."
+            }
+            checked={formik.values.complete && isOnline}
+            disabled={!isOnline}
+            onChange={formik.handleChange}
+          />
+        )}
 
         <UploadProgress percent={progress} visible={submitMutation.isPending && media.length > 0} />
 

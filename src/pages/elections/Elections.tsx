@@ -1,34 +1,33 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Camera, ClipboardList, Film, MapPin, Plus, Vote } from "lucide-react";
+import { ClipboardList, MapPin, Plus, Vote } from "lucide-react";
 import PageHeader from "../../components/PageHeader";
 import Badge from "../../components/ui/Badge";
 import { EmptyState, ErrorState, Skeleton } from "../../components/ui/States";
-import { useAgent } from "../../context/auth";
-import { POLLING_UNIT_STATUS_STYLES } from "../../lib/constants";
-import { timeAgo } from "../../lib/format";
+import { useWorkspace } from "../../context/auth";
+import { useTasks } from "../../hooks/useTasks";
+import { POLLING_UNIT_STATUS_STYLES, REVIEW_STATE_STYLES } from "../../lib/constants";
+import { dueStamp, timeAgo } from "../../lib/format";
+import { isActionable } from "../../lib/tasks";
 import * as service from "../../services/agentService";
 import { errorMessage } from "../../services/instance";
 import type { ElectionReport, Task } from "../../lib/types";
 
 export default function Elections() {
-  const agent = useAgent();
+  const workspace = useWorkspace();
 
   const reportsQuery = useQuery({
-    queryKey: ["election-reports", agent.id],
-    queryFn: service.fetchElectionReports,
+    queryKey: ["election-reports", workspace.campaignId],
+    queryFn: () => service.fetchElectionReports(workspace.campaignId),
   });
 
-  const tasksQuery = useQuery({
-    queryKey: ["tasks", agent.id],
-    queryFn: service.fetchTasks,
-  });
+  const tasksQuery = useTasks();
 
   const reports = reportsQuery.data ?? [];
 
   // Election tasks the admin assigned that still have no return filed.
   const awaiting = (tasksQuery.data ?? []).filter(
-    (task) => task.category === "Election Report" && task.status !== "Completed",
+    (task) => task.category === "Election Report" && isActionable(task.status),
   );
 
   return (
@@ -107,9 +106,10 @@ function AwaitingRow({ task }: { task: Task }) {
     >
       <ClipboardList className="size-4 shrink-0 text-primary" aria-hidden />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-bold">{task.subject}</span>
+        <span className="block truncate text-xs font-bold">{task.subject ?? task.title}</span>
         <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-tight text-muted-foreground">
-          {task.pollingUnit ?? task.ward ?? task.lga} · Due {task.due}
+          {task.location}
+          {task.dueAt && ` · Due ${dueStamp(task.dueAt)}`}
         </span>
       </span>
       <span className="shrink-0 font-mono text-[10px] font-bold uppercase tracking-widest text-primary">
@@ -120,59 +120,48 @@ function AwaitingRow({ task }: { task: Task }) {
 }
 
 function ReportCard({ report }: { report: ElectionReport }) {
-  const photos = report.media.filter((m) => m.kind === "image").length;
-  const videos = report.media.filter((m) => m.kind === "video").length;
-
   const turnout =
-    report.accredited && report.accredited > 0 && report.votesCast !== undefined
+    report.accredited && report.accredited > 0 && report.votesCast !== null
       ? Math.round((report.votesCast / report.accredited) * 100)
       : null;
 
   return (
     <article className="rounded-sm border border-border bg-surface p-4">
       <div className="mb-2 flex items-start justify-between gap-2">
-        <Badge tone={POLLING_UNIT_STATUS_STYLES[report.unitStatus]}>
-          {report.unitStatus}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          {report.unitStatus && (
+            <Badge tone={POLLING_UNIT_STATUS_STYLES[report.unitStatus]}>
+              {report.unitStatus}
+            </Badge>
+          )}
+          <Badge tone={REVIEW_STATE_STYLES[report.reviewState]}>{report.reviewState}</Badge>
+        </div>
         <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-          {timeAgo(report.submittedAt)}
+          {timeAgo(report.observedAt)}
         </span>
       </div>
 
-      <h3 className="text-sm font-bold">{report.subject}</h3>
+      <h3 className="text-sm font-bold">{report.subject ?? "Polling unit return"}</h3>
 
-      <p className="mt-1 flex items-center gap-1 font-mono text-[10px] uppercase tracking-tight text-muted-foreground">
-        <MapPin className="size-3 shrink-0" aria-hidden />
-        {report.unit} · {report.ward}
-      </p>
+      {report.unitLabel && (
+        <p className="mt-1 flex items-center gap-1 font-mono text-[10px] uppercase tracking-tight text-muted-foreground">
+          <MapPin className="size-3 shrink-0" aria-hidden />
+          {report.unitLabel}
+        </p>
+      )}
 
-      {(report.accredited !== undefined || report.votesCast !== undefined) && (
+      {(report.accredited !== null || report.votesCast !== null) && (
         <div className="mt-3 grid grid-cols-3 gap-2 font-mono">
-          <Figure label="Accredited" value={report.accredited} />
-          <Figure label="Votes cast" value={report.votesCast} />
+          <Figure label="Accredited" value={report.accredited ?? undefined} />
+          <Figure label="Votes cast" value={report.votesCast ?? undefined} />
           <Figure label="Turnout" value={turnout === null ? undefined : `${turnout}%`} />
         </div>
       )}
 
-      <p className="mt-2.5 line-clamp-3 text-xs leading-relaxed text-muted-foreground">
-        {report.body}
-      </p>
-
-      {(photos > 0 || videos > 0) && (
-        <div className="mt-3 flex items-center gap-3 border-t border-border pt-2.5 font-mono text-[10px] text-muted-foreground">
-          {photos > 0 && (
-            <span className="flex items-center gap-1">
-              <Camera className="size-3" aria-hidden />
-              {photos} photo{photos === 1 ? "" : "s"}
-            </span>
-          )}
-          {videos > 0 && (
-            <span className="flex items-center gap-1">
-              <Film className="size-3" aria-hidden />
-              {videos} video{videos === 1 ? "" : "s"}
-            </span>
-          )}
-        </div>
+      {report.notes && (
+        <p className="mt-2.5 line-clamp-3 text-xs leading-relaxed text-muted-foreground">
+          {report.notes}
+        </p>
       )}
     </article>
   );

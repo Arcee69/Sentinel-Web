@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import ApiSimulator from "../components/ApiSimulator";
 
 /**
  * Constrains the app to a handset column and, on desktop, renders it as a
@@ -15,7 +14,6 @@ export default function PhoneFrame({ children }: { children: ReactNode }) {
         }
       >
         {children}
-        <ApiSimulator />
       </div>
     </div>
   );

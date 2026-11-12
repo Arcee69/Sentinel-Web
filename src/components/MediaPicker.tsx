@@ -87,7 +87,7 @@ export default function MediaPicker({
       <input
         ref={photoInput}
         type="file"
-        accept="image/*"
+        accept={MEDIA_LIMITS.imageTypes.join(",")}
         capture="environment"
         multiple
         className="sr-only"
@@ -99,7 +99,7 @@ export default function MediaPicker({
       <input
         ref={videoInput}
         type="file"
-        accept="video/*"
+        accept={MEDIA_LIMITS.videoTypes.join(",")}
         capture="environment"
         multiple
         className="sr-only"

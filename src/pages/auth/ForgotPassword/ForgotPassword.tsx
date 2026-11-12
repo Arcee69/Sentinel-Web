@@ -1,73 +1,81 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useFormik } from "formik";
 import * as Yup from "yup";
-import { AtSign, CheckCircle2, ChevronLeft } from "lucide-react";
-import { toast } from "sonner";
+import { AtSign, CheckCircle2, ChevronLeft, MailCheck } from "lucide-react";
 import Button from "../../../components/ui/Button";
 import { PasswordField, TextField } from "../../../components/ui/Field";
 import * as service from "../../../services/agentService";
+import { toApiError } from "../../../services/errors";
 import { errorMessage } from "../../../services/instance";
 
-type Step = "identify" | "verify" | "reset" | "done";
-
 /**
- * Three-step recovery: request a code, confirm it, set a new password.
- *
- * Kept in one component because each step needs the email and code from
- * the previous one, and a refresh mid-flow should send the agent back to the
- * start rather than into an unreachable state.
+ * Password recovery. The API emails a reset link and always answers with the
+ * same neutral acknowledgement, so this screen never reveals whether an
+ * account exists. The link lands on `/reset-password?token=…&email=…`.
  */
 export default function ForgotPassword() {
-  const [step, setStep] = useState<Step>("identify");
-  const [email, setIdentifier] = useState("");
-  const [code, setCode] = useState("");
-  const [hint, setHint] = useState("");
+  const [sentTo, setSentTo] = useState<string | null>(null);
 
   return (
     <div className="flex flex-1 flex-col">
-      {step !== "done" && (
-        <Link
-          to="/login"
-          className="mb-5 -ml-1 inline-flex items-center gap-1 font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft className="size-3.5" aria-hidden />
-          Back to sign in
-        </Link>
+      <BackToSignIn />
+      {sentTo === null ? (
+        <IdentifyStep onSent={setSentTo} />
+      ) : (
+        <SentStep email={sentTo} onBack={() => setSentTo(null)} />
       )}
-
-      {step === "identify" && (
-        <IdentifyStep
-          onSent={(value, maskedHint) => {
-            setIdentifier(value);
-            setHint(maskedHint);
-            setStep("verify");
-          }}
-        />
-      )}
-
-      {step === "verify" && (
-        <VerifyStep
-          email={email}
-          hint={hint}
-          onVerified={(value) => {
-            setCode(value);
-            setStep("reset");
-          }}
-          onBack={() => setStep("identify")}
-        />
-      )}
-
-      {step === "reset" && (
-        <ResetStep
-          email={email}
-          code={code}
-          onDone={() => setStep("done")}
-        />
-      )}
-
-      {step === "done" && <DoneStep />}
     </div>
+  );
+}
+
+/** Landing page for the emailed reset link. */
+export function ResetPassword() {
+  const [searchParams] = useSearchParams();
+  const [done, setDone] = useState(false);
+  const token = searchParams.get("token") ?? "";
+  const email = searchParams.get("email") ?? "";
+
+  if (done) {
+    return (
+      <div className="flex flex-1 flex-col">
+        <DoneStep />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-1 flex-col">
+      <BackToSignIn />
+      {token ? (
+        <ResetStep email={email} token={token} onDone={() => setDone(true)} />
+      ) : (
+        <>
+          <StepHeading
+            title="Link incomplete"
+            blurb="This reset link is missing its token. Open the link from your email again, or request a new one."
+          />
+          <Link
+            to="/forgot-password"
+            className="mt-7 font-mono text-[10px] font-bold uppercase tracking-widest text-primary hover:underline"
+          >
+            Request a new link →
+          </Link>
+        </>
+      )}
+    </div>
+  );
+}
+
+function BackToSignIn() {
+  return (
+    <Link
+      to="/login"
+      className="mb-5 -ml-1 inline-flex items-center gap-1 font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+    >
+      <ChevronLeft className="size-3.5" aria-hidden />
+      Back to sign in
+    </Link>
   );
 }
 
@@ -96,26 +104,21 @@ function FormError({ message }: { message: string | null }) {
 
 /* -------------------------------------------------------------------------- */
 
-function IdentifyStep({
-  onSent,
-}: {
-  onSent: (email: string, hint: string) => void;
-}) {
+function IdentifyStep({ onSent }: { onSent: (email: string) => void }) {
   const [error, setError] = useState<string | null>(null);
 
   const formik = useFormik({
     initialValues: { email: "" },
     validationSchema: Yup.object({
-      email: Yup.string().trim().required("Enter your email"),
+      email: Yup.string().trim().email("Enter a valid email").required("Enter your email"),
     }),
     onSubmit: async (values) => {
       setError(null);
       try {
-        const { hint } = await service.requestPasswordReset(values.email);
-        toast.success("Reset code sent");
-        onSent(values.email, hint);
+        await service.requestPasswordReset(values.email.trim());
+        onSent(values.email.trim());
       } catch (err) {
-        setError(errorMessage(err, "We couldn't send the code. Try again."));
+        setError(errorMessage(err, "We couldn't send the reset link. Try again."));
       }
     },
   });
@@ -124,7 +127,7 @@ function IdentifyStep({
     <>
       <StepHeading
         title="Reset password"
-        blurb="We'll send a 6-digit code to the contact on your Sentinel account."
+        blurb="Enter the email on your Sentinel account and we'll send you a reset link."
       />
 
       <form onSubmit={formik.handleSubmit} className="mt-7 space-y-4" noValidate>
@@ -145,7 +148,7 @@ function IdentifyStep({
         <FormError message={error} />
 
         <Button type="submit" size="lg" fullWidth loading={formik.isSubmitting}>
-          Send code
+          Send reset link
         </Button>
       </form>
     </>
@@ -154,97 +157,36 @@ function IdentifyStep({
 
 /* -------------------------------------------------------------------------- */
 
-function VerifyStep({
-  email,
-  hint,
-  onVerified,
-  onBack,
-}: {
-  email: string;
-  hint: string;
-  onVerified: (code: string) => void;
-  onBack: () => void;
-}) {
-  const [error, setError] = useState<string | null>(null);
-  const [resending, setResending] = useState(false);
-
-  const formik = useFormik({
-    initialValues: { code: "" },
-    validationSchema: Yup.object({
-      code: Yup.string()
-        .trim()
-        .matches(/^\d{6}$/, "Enter the 6-digit code")
-        .required("Enter the 6-digit code"),
-    }),
-    onSubmit: async (values) => {
-      setError(null);
-      try {
-        await service.verifyResetCode(email, values.code);
-        onVerified(values.code);
-      } catch (err) {
-        setError(errorMessage(err, "That code isn't right."));
-      }
-    },
-  });
-
-  const resend = async () => {
-    setResending(true);
-    try {
-      await service.requestPasswordReset(email);
-      toast.success("New code sent");
-    } finally {
-      setResending(false);
-    }
-  };
-
+function SentStep({ email, onBack }: { email: string; onBack: () => void }) {
   return (
-    <>
-      <StepHeading
-        title="Enter code"
-        blurb={`We sent a 6-digit code to ${hint}. It expires in 10 minutes.`}
-      />
+    <div className="flex flex-1 flex-col">
+      <span
+        className="flex size-12 items-center justify-center rounded-full bg-primary/12 text-primary"
+        aria-hidden
+      >
+        <MailCheck className="size-6" />
+      </span>
 
-      <form onSubmit={formik.handleSubmit} className="mt-7 space-y-4" noValidate>
-        <TextField
-          label="Verification code"
-          name="code"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={6}
-          placeholder="000000"
-          className="text-center font-mono text-lg tracking-[0.5em]"
-          value={formik.values.code}
-          onChange={formik.handleChange}
-          onBlur={formik.handleBlur}
-          error={formik.touched.code ? formik.errors.code : undefined}
-          required
+      <div className="mt-5">
+        <StepHeading
+          title="Check your email"
+          blurb={`If ${email} belongs to a Sentinel account, a password reset link is on its way. Open it on this device to choose a new password.`}
         />
+      </div>
 
-        <FormError message={error} />
+      <p className="mt-6 rounded-sm border border-border bg-muted/50 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
+        Nothing after a few minutes? Check spam, or ask your supervisor to confirm the email
+        on your account.
+      </p>
 
-        <Button type="submit" size="lg" fullWidth loading={formik.isSubmitting}>
-          Verify
-        </Button>
-
-        <div className="flex items-center justify-between pt-1">
-          <button
-            type="button"
-            onClick={onBack}
-            className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
-          >
-            Change contact
-          </button>
-          <button
-            type="button"
-            onClick={() => void resend()}
-            disabled={resending}
-            className="font-mono text-[10px] font-bold uppercase tracking-widest text-primary hover:underline disabled:opacity-50"
-          >
-            {resending ? "Sending…" : "Resend code"}
-          </button>
-        </div>
-      </form>
-    </>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mt-6 self-start font-mono text-[10px] font-bold uppercase tracking-widest text-primary hover:underline"
+      >
+        Use a different email
+      </button>
+    </div>
   );
 }
 
@@ -252,18 +194,19 @@ function VerifyStep({
 
 function ResetStep({
   email,
-  code,
+  token,
   onDone,
 }: {
   email: string;
-  code: string;
+  token: string;
   onDone: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
 
   const formik = useFormik({
-    initialValues: { password: "", confirm: "" },
+    initialValues: { email, password: "", confirm: "" },
     validationSchema: Yup.object({
+      email: Yup.string().trim().email("Enter a valid email").required("Enter your email"),
       password: Yup.string()
         .min(8, "Use at least 8 characters")
         .matches(/[0-9]/, "Include at least one number")
@@ -272,12 +215,20 @@ function ResetStep({
         .oneOf([Yup.ref("password")], "Passwords don't match")
         .required("Confirm your new password"),
     }),
-    onSubmit: async (values) => {
+    onSubmit: async (values, helpers) => {
       setError(null);
       try {
-        await service.resetPassword(email, code, values.password);
+        await service.resetPassword({
+          email: values.email.trim(),
+          token,
+          password: values.password,
+          password_confirmation: values.confirm,
+        });
         onDone();
       } catch (err) {
+        const fields = toApiError(err).fieldErrors;
+        if (fields.password) helpers.setFieldError("password", fields.password);
+        if (fields.email) helpers.setFieldError("email", fields.email);
         setError(errorMessage(err, "We couldn't reset your password."));
       }
     },
@@ -291,6 +242,22 @@ function ResetStep({
       />
 
       <form onSubmit={formik.handleSubmit} className="mt-7 space-y-4" noValidate>
+        {!email && (
+          <TextField
+            label="Email"
+            name="email"
+            inputMode="email"
+            autoComplete="username"
+            placeholder="you@smhp.ng"
+            icon={<AtSign className="size-4" />}
+            value={formik.values.email}
+            onChange={formik.handleChange}
+            onBlur={formik.handleBlur}
+            error={formik.touched.email ? formik.errors.email : undefined}
+            required
+          />
+        )}
+
         <PasswordField
           label="New password"
           name="password"

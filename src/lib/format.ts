@@ -48,7 +48,15 @@ export function dueStamp(iso: string): string {
   if (isSameDay(date, today)) return `TODAY ${time} HRS`;
   if (isSameDay(date, tomorrow)) return `TOMORROW ${time} HRS`;
 
-  return `${date.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase()} ${time} HRS`;
+  // A bare weekday only reads correctly for the coming week; anything past or
+  // further out needs the date, or "FRI" for last month looks like this Friday.
+  const days = (date.getTime() - today.getTime()) / 86_400_000;
+  const label =
+    days > 0 && days < 6
+      ? date.toLocaleDateString(undefined, { weekday: "short" })
+      : date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+
+  return `${label.toUpperCase()} ${time} HRS`;
 }
 
 function isSameDay(a: Date, b: Date): boolean {

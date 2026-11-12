@@ -12,17 +12,21 @@ administrators add agents.
 
 ```bash
 npm install
+cp .env.example .env   # points at https://smhpsentinel.com/api/v1
 npm run dev
 ```
 
-Sign in with a seeded demo agent:
+Sign in with a seeded demo agent (password `Smhpsentinel@2026!`):
 
-| Field | Value |
-| --- | --- |
-| Email | `test@sentinel.com` |
-| Password | `password` |
+| Agent | Email | Area | Polling unit codes |
+| --- | --- | --- | --- |
+| Alpha agent A | `agent-a@alpha.sentinel-demo.example.test` | Lagos State | `DEMO-A-001`, `DEMO-A-002` |
+| Alpha agent B | `agent-b@alpha.sentinel-demo.example.test` | Kano State | `DEMO-B-001`, `DEMO-B-002` |
+| Beta agent | `agent@beta.sentinel-demo.example.test` | Kano State | `DEMO-B-001`, `DEMO-B-002` |
 
-The forgot-password flow accepts reset code **`123456`**.
+Managers, observers and admins are turned away at sign-in — they have no field
+assignment and belong in the back office. Repeated sign-ins are rate limited
+(429); the form shows the wait time.
 
 ## Scripts
 
@@ -33,128 +37,90 @@ The forgot-password flow accepts reset code **`123456`**.
 | `npm run preview` | Serve the build (needed to exercise the service worker) |
 | `npm run lint` | ESLint |
 
-While the mock backend is active, the **API Simulator** (flask button, above the
-bottom nav) lets you demo slow connections, server errors, expired sessions and
-dropped signal — see below.
+## API integration
 
-## Backend wiring — how this behaves once the API is live
+One Sentinel API serves this app and the back office; the reference is
+`frontend-integration-guide.md` and the Postman collection. Every response is
+`{ success, message, data, meta }`; errors are
+`{ success: false, message, error: { code, details }, request_id }` and are
+normalised to `ApiError` in [`errors.ts`](src/services/errors.ts).
 
-There is no backend yet, so requests are answered locally. Crucially they are
-**not** short-circuited: the mock is installed as an *axios adapter*
-([`mockAdapter.ts`](src/services/mock/mockAdapter.ts)), so every call still runs
-through the real interceptors, carries the real `Authorization` header, uploads
-real multipart bodies, and comes back as a real `AxiosResponse` or `AxiosError`.
+- **Session.** `POST /auth/login` (`email`, `password`, `device_name`) returns a
+  bearer token, then `GET /auth/context` decides the workspace: the first
+  campaign with `access.can_work`, preferring one with an active assignment
+  ([`resolveWorkspace`](src/services/agentService.ts)). Context is re-read
+  whenever the API is reachable; the stored snapshot keeps the app usable
+  offline. A 401 clears the session and returns to `/login?expired=1`.
+- **Mapping.** [`agentService.ts`](src/services/agentService.ts) is the only file
+  that knows API shapes. It turns snake_case records and enum codes into the
+  display types in [`types.ts`](src/lib/types.ts); label↔code tables live in
+  [`constants.ts`](src/lib/constants.ts).
 
-[`agentService.ts`](src/services/agentService.ts) therefore contains **no mock
-branch** — what runs today is the production code path. Going live is one flag:
-
-```bash
-# .env
-VITE_API_BASE_URL=https://api.sentinel.example/v1
-VITE_USE_MOCK_API=false
-```
-
-### The API Simulator
-
-While the mock is active, a flask button sits above the bottom nav. It drives the
-adapter so you can see how each screen behaves against a real server:
-
-| Control | Demonstrates |
+| Screen | Calls |
 | --- | --- |
-| Connection profile | Good signal · Rural 3G · Flaky · No service |
-| Latency | Loading skeletons and spinners under a slow API |
-| Failure rate | Error states with a working **Retry** |
-| Server unreachable | Transport-level failure and the offline outbox |
-| Expire my session | A `401` → token cleared → redirect to `/login?expired=1` |
-| Reset demo data | Restores the seeded tasks, reports, election returns and incidents |
+| Home | `/auth/context`, `/campaigns/{c}/tasks`, `/campaigns/{c}/notifications`, `/staff-notifications/{n}/read` |
+| Tasks | `/campaigns/{c}/tasks`, `/tasks/{t}`, `/tasks/{t}/start`, `/tasks/{t}/complete` (with `expected_revision`) |
+| Task report | `POST /campaigns/{c}/field-reports` (`activity_type: task_note`), then `/media/uploads` |
+| Election | `/campaigns/{c}/polling-reports`, `/campaigns/{c}/polling-places?code=`, `POST /polling-places/{p}/reports` (+ `Idempotency-Key`), `/polling-occasions` when a code matches several elections |
+| Incidents | `/campaigns/{c}/incidents` GET/POST, then `/media/uploads` |
+| Profile | context snapshot, `PATCH /auth/notification-preferences`, `/auth/logout` |
+| Password | `/auth/password/forgot`, `/auth/password/reset` (link lands on `/reset-password?token=&email=`) |
+| Presence | `POST /assignments/{a}/heartbeat` every 5 minutes while visible and online |
 
-The button turns amber whenever conditions are degraded, so a demo never
-silently runs in a broken state. It disappears entirely once
-`VITE_USE_MOCK_API=false`.
+### Submissions and evidence
 
-### Contract the backend must implement
+Reports are created first; each photo or video is then uploaded on its own to
+`POST /media/uploads` (`parent_type`, `parent_id`, `file`). Accepted formats are
+JPEG/PNG/MP4/WebM/MOV, and the picker only offers those. If an attachment fails
+after the record exists, the remaining files are queued as a separate evidence
+job, so the record is never refiled. Uploaded evidence may stay pending while
+the server scans it.
 
-Every response uses one envelope:
+Ticking **Mark task complete** on a report form calls `/complete` after the
+submission lands (starting the task first if needed). It re-reads the task
+first, in case the server already closed it.
 
-```jsonc
-// success
-{ "success": true, "data": { /* payload */ } }
-// failure — `message` is shown to the agent verbatim
-{ "success": false, "message": "That code isn't right." }
-```
+### API limits worth knowing
 
-| Method | Path | Body | Returns |
-| --- | --- | --- | --- |
-| POST | `/auth/login` | `identifier`, `password` | `{ token, agent, issuedAt }` |
-| POST | `/auth/logout` | — | `{ ok }` |
-| POST | `/auth/forgot-password` | `identifier` | `{ hint }` (masked contact) |
-| POST | `/auth/verify-reset-code` | `identifier`, `code` | `{ ok }` |
-| POST | `/auth/reset-password` | `identifier`, `code`, `password` | `{ ok }` |
-| GET | `/agent/tasks` | — | `Task[]` for the bearer's agent |
-| GET | `/agent/tasks/:id` | — | `Task` |
-| PATCH | `/agent/tasks/:id/status` | `status` | updated `Task` |
-| GET | `/agent/reports` | — | `TaskReport[]` |
-| POST | `/agent/reports` | multipart | created `TaskReport` |
-| GET | `/agent/election-reports` | — | `ElectionReport[]` |
-| POST | `/agent/election-reports` | multipart | created `ElectionReport` |
-| GET | `/agent/incidents` | — | `Incident[]` |
-| POST | `/agent/incidents` | multipart | created `Incident` |
-
-Notes for whoever builds this:
-
-- **Auth** is `Authorization: Bearer <token>`. Any `401` on an `/agent/*` route
-  signs the agent out; a `401` on `/auth/login` is treated as bad credentials and
-  shown inline instead.
-- **The token identifies the agent.** `/agent/*` routes must scope to the bearer
-  rather than trusting an id from the client.
-- **Submissions are multipart.** Text fields plus a `mediaMeta` JSON array
-  (`id`, `kind`, `name`, `size`, `mimeType`, `duration`) and repeated `media`
-  file parts. Respond with the stored records, including the URLs your storage
-  assigned — the client's local blob URLs are meaningless to anyone else.
-- **Validation failures** should use `422` with a human `message`; it is rendered
-  straight to the agent.
-- Status codes are honoured throughout: `403` and `404` produce distinct copy —
-  see `errorMessage()` in [`instance.ts`](src/services/instance.ts).
+- Report and incident lists carry polling-unit **IDs**, not codes, and an agent
+  can't look a unit up by ID. The app remembers codes it has seen on this device
+  ([`places.ts`](src/lib/places.ts)); records filed elsewhere show without a unit.
+- Tasks only carry a `geographic_unit_id`; the app can name the agent's home
+  unit (from context) and falls back to it otherwise.
+- There is no campaign switcher yet — an agent working several campaigns gets
+  the one with an active assignment.
 
 ## Domain model
 
-Types in [`src/lib/types.ts`](src/lib/types.ts) mirror the back office field-for-field,
-so an agent's submission needs no translation on the way in. Renaming a field here
-means renaming it in the admin too.
-
-- **Task** — `category` (`Opinion Poll` · `Election Report` · `Incident Report`),
-  `subject` (from that category's fixed list), `priority`, `status`
-  (`Pending` · `In Progress` · `Completed`), `assigneeId`, `state`, `lga`, `due`.
-- **Report** — `type` (`Rally` · `Door-to-Door` · `Town Hall` · `Media` ·
-  `Distribution`), `body`, `respondents`, `media`, `location`.
-- **Election report** — a ward/polling-unit return filed from the Election tab,
-  with or without an assigned task. `subject` (from the Election Report list),
-  `unit`, `ward`, `unitStatus` (`Open` · `Not opened` · `Closed` · `Suspended`),
-  `accredited`, `votesCast`, `body`, `media`, optional `taskId`.
-- **Incident** — `type` (`Violence` · `Delay` · `Malpractice` · `Logistics`),
-  `severity`, `unit` (polling unit code), `status` (`Open` · `Escalated` ·
-  `Resolved`), `media`, optional GPS fix.
-
-The category → subject lists and the subject → incident-type mapping are in
-[`src/lib/constants.ts`](src/lib/constants.ts). Critical incidents are filed as
-`Escalated` rather than `Open`. An election report carrying a `taskId` closes
-that task out, exactly as a task report does, and `votesCast` may never exceed
-`accredited`.
+- **Task** — `category` (`Opinion Poll` · `Election Report` · `Incident Report`,
+  or none), `subject`, `priority`, `status` (`Pending` · `In Progress` ·
+  `Completed` · `Cancelled`), `revision`. Category routes **Submit report** to
+  the matching form.
+- **Election report** — a polling-unit return: `subject` (the five election
+  subjects), `operating_status` (`Open` · `Delayed` · `Not opened` · `Closed` ·
+  `Suspended`), accredited persons, votes cast, notes, and a `review_state` from
+  the collation desk. Recorded against a **polling place**, not a ward.
+- **Incident** — one of six `incident_type`s, `severity`, the polling-unit code
+  as typed, optional GPS, `status` (`Open` · `Escalated` · `Resolved`). The API
+  derives the broad category itself.
 
 ## Offline behaviour
 
 Agents work through dead zones, so offline is a first-class path rather than an
 error state.
 
-- Submissions made offline are written to an **IndexedDB outbox**
-  ([`src/lib/outbox.ts`](src/lib/outbox.ts)) and replayed oldest-first when the
-  connection returns, on reconnect and on tab focus. Five failed attempts retires
-  an item.
+- Submissions made offline — or interrupted by a dropped connection — are
+  written to an **IndexedDB outbox** ([`outbox.ts`](src/lib/outbox.ts)) with
+  their exact body, `client_submission_id` and idempotency key, and replayed
+  oldest-first on reconnect and on tab focus. A queued record is never shown as
+  delivered.
+- An election report queued offline keeps the typed code; it is resolved to a
+  polling place when the queue syncs.
+- A submission the server rejects (validation, permission, conflict) stops
+  retrying and is listed on **Profile** with the server's reason, to retry or
+  discard. Network and server errors retry up to five times.
 - Captured photos and video are stored as blobs in IndexedDB
-  ([`src/lib/media.ts`](src/lib/media.ts)), so evidence survives a reload while a
-  report sits queued.
-- The console strip shows GPS lock, connection state, queue depth (tap to sync
-  now) and battery.
+  ([`media.ts`](src/lib/media.ts)) until the server has them.
 - React Query runs with `networkMode: "always"` — this app owns its own offline
   semantics, and the default would otherwise pause writes indefinitely instead of
   letting them reach the outbox.
@@ -173,13 +139,14 @@ test install and offline launch.
 
 ```
 src/
-  components/    UI primitives, MediaPicker, StatusStrip, TaskCard, BottomNav
+  components/    UI primitives, MediaPicker, NoticeBoard, StatusStrip, TaskCard, BottomNav
   context/       auth / offline / theme — hooks in .ts, providers in .tsx
+  hooks/         tasks query, submission flow, assignment heartbeat
   layout/        PhoneFrame, AuthLayout, AppLayout
-  lib/           types, constants, formatting, IndexedDB, outbox, media
+  lib/           types, constants, formatting, IndexedDB, outbox, media, places
   pages/         auth · home · tasks · elections · incidents · profile
   routers/       route table and the protected/public gates
-  services/      API facade, axios instance, mock adapter + simulator
+  services/      endpoints, axios instance, session, errors, agentService
 ```
 
 ## Notes
@@ -189,6 +156,3 @@ src/
   and `.dark` in [`index.css`](src/index.css) — every component reads them
   through Tailwind, so a rebrand is an edit to those two blocks. The light/dark
   toggle lives in Profile.
-- The seeded database persists in `localStorage` under `sentinel.mockdb.v3`.
-  Bump the key in [`mockDb.ts`](src/services/mock/mockDb.ts) whenever the seed
-  changes, or existing browsers will keep serving the old copy.

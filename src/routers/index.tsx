@@ -5,7 +5,7 @@ import ProtectedRoute, { PublicOnlyRoute } from "./ProtectedRoute";
 import Landing from "../pages/landing/Landing";
 import Elections from "../pages/elections/Elections";
 import SubmitElectionReport from "../pages/elections/SubmitElectionReport";
-import ForgotPassword from "../pages/auth/ForgotPassword/ForgotPassword";
+import ForgotPassword, { ResetPassword } from "../pages/auth/ForgotPassword/ForgotPassword";
 import Login from "../pages/auth/Login/Login";
 import Home from "../pages/home/Home";
 import Incidents from "../pages/incidents/Incidents";
@@ -26,6 +26,7 @@ export default function Routers() {
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
         </Route>
       </Route>
 

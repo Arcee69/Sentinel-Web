@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormik } from "formik";
 import * as Yup from "yup";
 import { CloudOff, Vote } from "lucide-react";
@@ -9,23 +9,30 @@ import MediaPicker from "../../components/MediaPicker";
 import PageHeader from "../../components/PageHeader";
 import UploadProgress from "../../components/UploadProgress";
 import Button from "../../components/ui/Button";
-import { SelectField, TextAreaField, TextField } from "../../components/ui/Field";
-import { useAgent } from "../../context/auth";
+import { CheckboxField, SelectField, TextAreaField, TextField } from "../../components/ui/Field";
+import { useAgent, useWorkspace } from "../../context/auth";
 import { useOffline } from "../../context/offline";
+import { useFieldSubmission } from "../../hooks/useFieldSubmission";
+import { useTasks } from "../../hooks/useTasks";
 import {
   ELECTION_SUBJECTS,
   ELECTION_SUBJECTS_NEEDING_FIGURES,
+  OPERATING_STATUS_CODE,
   POLLING_UNIT_STATUSES,
   POLLING_UNIT_STATUS_STYLES,
+  SUBJECT_CODE,
 } from "../../lib/constants";
 import { cn } from "../../lib/format";
+import { isActionable } from "../../lib/tasks";
 import * as service from "../../services/agentService";
-import { errorMessage } from "../../services/instance";
-import type { MediaItem, PollingUnitStatus } from "../../lib/types";
+import { toApiError } from "../../services/errors";
+import type { ApiPollingPlace, MediaItem, PollingUnitStatus } from "../../lib/types";
 
 /** Figures are mandatory for the subjects that exist to carry them. */
 const needsFigures = (subject: string) =>
   ELECTION_SUBJECTS_NEEDING_FIGURES.includes(subject);
+
+const normaliseCode = (value: string) => value.trim().toUpperCase();
 
 const count = Yup.number()
   .transform((value, original) => (original === "" ? undefined : value))
@@ -44,8 +51,7 @@ const schema = Yup.object({
   unit: Yup.string()
     .trim()
     .required("Enter the polling unit code")
-    .matches(/^[A-Za-z0-9/\- ]{3,}$/, "Use the code format, e.g. AN/ON/04/012"),
-  ward: Yup.string().trim().required("Enter the ward"),
+    .min(3, "Enter the full polling unit code"),
   unitStatus: Yup.string().required("Set the polling unit status"),
   accredited: count.when("subject", requiredWhenFigures("Accreditation figure required")),
   votesCast: count
@@ -72,52 +78,53 @@ const schema = Yup.object({
 
 export default function SubmitElectionReport() {
   const agent = useAgent();
+  const workspace = useWorkspace();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { isOnline, queue } = useOffline();
+  const { isOnline } = useOffline();
   const [searchParams] = useSearchParams();
 
   const [media, setMedia] = useState<MediaItem[]>([]);
-  const [progress, setProgress] = useState<number | null>(null);
+  /** The code as last committed (on blur), which is what gets looked up. */
+  const [lookupCode, setLookupCode] = useState("");
   /** Guards the deep-link prefill so it can never overwrite typed input. */
   const prefilled = useRef(false);
 
-  const tasksQuery = useQuery({
-    queryKey: ["tasks", agent.id],
-    queryFn: service.fetchTasks,
-  });
+  const tasksQuery = useTasks();
 
   const openElectionTasks = useMemo(
     () =>
       (tasksQuery.data ?? []).filter(
-        (task) => task.category === "Election Report" && task.status !== "Completed",
+        (task) => task.category === "Election Report" && isActionable(task.status),
       ),
     [tasksQuery.data],
   );
 
-  const submitMutation = useMutation({
-    mutationFn: async (draft: service.ElectionReportDraft) => {
-      if (!isOnline) {
-        await queue("election-report", draft);
-        return null;
-      }
-      setProgress(0);
-      return service.submitElectionReport(draft, setProgress);
-    },
-    onSuccess: async () => {
-      toast.success(
-        isOnline
-          ? "Election report filed — the collation desk has it"
-          : "Saved offline — it'll be sent the moment you have signal",
-      );
-      await queryClient.invalidateQueries({ queryKey: ["election-reports", agent.id] });
-      await queryClient.invalidateQueries({ queryKey: ["tasks", agent.id] });
-      navigate("/elections", { replace: true });
-    },
-    onError: (error) => {
-      setProgress(null);
-      toast.error(errorMessage(error, "Couldn't file the report. Try again."));
-    },
+  const placesKey = (code: string) => ["polling-places", workspace.campaignId, code];
+
+  const placesQuery = useQuery({
+    queryKey: placesKey(lookupCode),
+    queryFn: () => service.lookupPollingPlaces(workspace.campaignId, lookupCode),
+    enabled: isOnline && lookupCode.length >= 3,
+    retry: false,
+    staleTime: 10 * 60_000,
+  });
+
+  const places = placesQuery.data ?? [];
+
+  // Only needed to tell occasions apart when one code matches several.
+  const occasionsQuery = useQuery({
+    queryKey: ["polling-occasions"],
+    queryFn: service.fetchPollingOccasions,
+    enabled: places.length > 1,
+    staleTime: 10 * 60_000,
+  });
+
+  const { mutation: submitMutation, progress } = useFieldSubmission({
+    kind: "polling-report",
+    sentMessage: "Election report filed — the collation desk has it",
+    invalidate: [["election-reports", workspace.campaignId]],
+    onDone: () => navigate("/elections", { replace: true }),
   });
 
   const formik = useFormik({
@@ -125,26 +132,85 @@ export default function SubmitElectionReport() {
       taskId: searchParams.get("task") ?? "",
       subject: "",
       unit: "",
-      ward: agent.ward ?? "",
+      placeId: "",
       unitStatus: "" as PollingUnitStatus | "",
       accredited: "",
       votesCast: "",
       body: "",
+      complete: true,
     },
     validationSchema: schema,
     enableReinitialize: false,
-    onSubmit: (values) =>
-      submitMutation.mutateAsync({
-        subject: values.subject,
-        unit: values.unit.trim().toUpperCase(),
-        ward: values.ward.trim(),
-        unitStatus: values.unitStatus as PollingUnitStatus,
+    onSubmit: async (values, helpers) => {
+      if (!workspace.assignmentId) {
+        toast.error("You have no active assignment. Contact your supervisor.");
+        return;
+      }
+
+      const code = normaliseCode(values.unit);
+      let place: ApiPollingPlace | null = null;
+
+      // Online, the code must resolve to exactly one published polling place
+      // before anything is filed. Offline, it is resolved when the queue syncs.
+      if (isOnline) {
+        let matches: ApiPollingPlace[];
+        try {
+          matches = await queryClient.fetchQuery({
+            queryKey: placesKey(code),
+            queryFn: () => service.lookupPollingPlaces(workspace.campaignId, code),
+            staleTime: 10 * 60_000,
+          });
+        } catch (error) {
+          const apiError = toApiError(error);
+          if (!apiError.isNotFound && !apiError.isNetwork) {
+            toast.error(apiError.message);
+            return;
+          }
+          if (apiError.isNotFound) {
+            helpers.setFieldError("unit", "No published polling unit in your campaign has this code");
+            return;
+          }
+          matches = [];
+        }
+
+        if (matches.length > 1) {
+          place = matches.find((m) => m.id === values.placeId) ?? null;
+          if (!place) {
+            setLookupCode(code);
+            helpers.setFieldError("placeId", "Pick which election this report is for");
+            return;
+          }
+        } else {
+          place = matches[0] ?? null;
+        }
+      }
+
+      const draft: service.PollingReportDraft = {
+        clientSubmissionId: crypto.randomUUID(),
+        idempotencyKey: crypto.randomUUID(),
+        observedAt: new Date().toISOString(),
+        campaignId: workspace.campaignId,
+        assignmentId: workspace.assignmentId,
+        taskId: values.taskId || undefined,
+        unitCode: code,
+        place,
+        subject: SUBJECT_CODE[values.subject],
+        operatingStatus: values.unitStatus
+          ? OPERATING_STATUS_CODE[values.unitStatus]
+          : undefined,
         accredited: values.accredited === "" ? undefined : Number(values.accredited),
         votesCast: values.votesCast === "" ? undefined : Number(values.votesCast),
-        body: values.body.trim(),
+        notes: values.body.trim(),
         media,
-        taskId: values.taskId || undefined,
-      }),
+      };
+
+      await submitMutation
+        .mutateAsync({
+          draft,
+          completeTaskId: values.taskId && values.complete ? values.taskId : undefined,
+        })
+        .catch(() => undefined);
+    },
   });
 
   /**
@@ -156,11 +222,9 @@ export default function SubmitElectionReport() {
     await formik.setFieldValue("taskId", taskId);
 
     const task = openElectionTasks.find((t) => t.id === taskId);
-    if (!task) return;
-
-    await formik.setFieldValue("subject", task.subject);
-    if (task.pollingUnit) await formik.setFieldValue("unit", task.pollingUnit);
-    if (task.ward) await formik.setFieldValue("ward", task.ward);
+    if (task?.subject && ELECTION_SUBJECTS.includes(task.subject)) {
+      await formik.setFieldValue("subject", task.subject);
+    }
   };
 
   // A deep link from the Election tab arrives before the task list does, so
@@ -180,9 +244,8 @@ export default function SubmitElectionReport() {
     setValues((current) => ({
       ...current,
       taskId: task.id,
-      subject: task.subject,
-      unit: task.pollingUnit ?? current.unit,
-      ward: task.ward ?? current.ward,
+      subject:
+        task.subject && ELECTION_SUBJECTS.includes(task.subject) ? task.subject : current.subject,
     }));
   }, [tasksQuery.isSuccess, openElectionTasks, searchParams, setValues]);
 
@@ -197,6 +260,29 @@ export default function SubmitElectionReport() {
       : null;
 
   const figuresRequired = needsFigures(formik.values.subject);
+  const codeIsCurrent = lookupCode !== "" && lookupCode === normaliseCode(formik.values.unit);
+
+  const unitHint = (() => {
+    if (!isOnline) return "Offline — the code is checked when this report syncs.";
+    if (!codeIsCurrent) return `Your sector: ${agent.sector}. Reports are recorded against the polling unit, not the ward.`;
+    if (placesQuery.isFetching) return "Checking code…";
+    if (places.length === 1) return `✓ ${places[0].name}`;
+    if (places.length > 1) return `${places[0].name} — used in ${places.length} elections, pick one below.`;
+    return undefined;
+  })();
+
+  const unitError =
+    formik.touched.unit && formik.errors.unit
+      ? formik.errors.unit
+      : codeIsCurrent && placesQuery.isError
+        ? toApiError(placesQuery.error).isNotFound
+          ? "No published polling unit in your campaign has this code"
+          : toApiError(placesQuery.error).message
+        : undefined;
+
+  const occasionName = (occasionId: string) =>
+    occasionsQuery.data?.find((o) => o.id === occasionId)?.name ??
+    `Election ${occasionId.slice(0, 8)}`;
 
   return (
     <>
@@ -231,7 +317,6 @@ export default function SubmitElectionReport() {
             value={formik.values.taskId}
             onChange={(event) => void linkTask(event.target.value)}
             onBlur={formik.handleBlur}
-            hint="Linking marks that task complete once this report is filed."
           />
         )}
 
@@ -250,26 +335,38 @@ export default function SubmitElectionReport() {
         <TextField
           label="Polling unit code"
           name="unit"
-          placeholder="AN/ON/04/012"
+          placeholder="e.g. DEMO-A-001"
           autoCapitalize="characters"
-          hint={`Your sector: ${agent.lga}, ${agent.state}`}
+          hint={unitHint}
           value={formik.values.unit}
-          onChange={formik.handleChange}
-          onBlur={formik.handleBlur}
-          error={formik.touched.unit ? formik.errors.unit : undefined}
+          onChange={(event) => {
+            formik.handleChange(event);
+            void formik.setFieldValue("placeId", "");
+          }}
+          onBlur={(event) => {
+            formik.handleBlur(event);
+            setLookupCode(normaliseCode(event.target.value));
+          }}
+          error={unitError}
           required
         />
 
-        <TextField
-          label="Ward"
-          name="ward"
-          placeholder="Onitsha North 04"
-          value={formik.values.ward}
-          onChange={formik.handleChange}
-          onBlur={formik.handleBlur}
-          error={formik.touched.ward ? formik.errors.ward : undefined}
-          required
-        />
+        {codeIsCurrent && places.length > 1 && (
+          <SelectField
+            label="Which election?"
+            name="placeId"
+            options={places.map((place) => ({
+              value: place.id,
+              label: occasionName(place.polling_occasion_id),
+            }))}
+            placeholder="Select the election"
+            value={formik.values.placeId}
+            onChange={formik.handleChange}
+            onBlur={formik.handleBlur}
+            error={formik.errors.placeId}
+            required
+          />
+        )}
 
         <div className="space-y-1.5">
           <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -351,8 +448,23 @@ export default function SubmitElectionReport() {
           value={media}
           onChange={setMedia}
           label="Photos of posted results"
-          hint="Attach the result sheet, posted figures, or the unit itself."
+          hint="Attach the result sheet, posted figures, or the unit itself. Evidence may show as pending while it's scanned."
         />
+
+        {formik.values.taskId && (
+          <CheckboxField
+            name="complete"
+            label="Mark the linked task complete"
+            hint={
+              isOnline
+                ? "Untick if this task needs more returns."
+                : "Offline: finish the task from its screen once this report has synced."
+            }
+            checked={formik.values.complete && isOnline}
+            disabled={!isOnline}
+            onChange={formik.handleChange}
+          />
+        )}
 
         <UploadProgress
           percent={progress}

@@ -2,14 +2,15 @@ import { Link } from "react-router-dom";
 import { ChevronRight, MapPin } from "lucide-react";
 import Badge from "./ui/Badge";
 import { PRIORITY_STYLES, STATUS_STYLES } from "../lib/constants";
-import { cn, dueStamp, isOverdue } from "../lib/format";
+import { cn, dueStamp } from "../lib/format";
+import { isTaskOverdue } from "../lib/tasks";
 import type { Task } from "../lib/types";
 
 /**
  * Full-bleed card for the task an agent should act on next.
  */
 export function FeaturedTaskCard({ task }: { task: Task }) {
-  const overdue = isOverdue(task.dueAt) && task.status !== "Completed";
+  const overdue = isTaskOverdue(task);
 
   return (
     <Link
@@ -23,7 +24,7 @@ export function FeaturedTaskCard({ task }: { task: Task }) {
               Priority · {task.priority}
             </Badge>
             <span className="font-mono text-[10px] text-muted-foreground">
-              {task.category}
+              {task.category ?? "General"}
             </span>
           </div>
           <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
@@ -35,18 +36,16 @@ export function FeaturedTaskCard({ task }: { task: Task }) {
 
         <p className="mb-4 flex items-center gap-1 text-xs text-muted-foreground">
           <MapPin className="size-3 shrink-0" aria-hidden />
-          <span className="truncate">
-            {task.ward ?? task.lga}, {task.state}
-          </span>
+          <span className="truncate">{task.location}</span>
         </p>
 
         <div className="mb-4 grid grid-cols-3 gap-2 font-mono">
           <Metric
             label="Due"
-            value={overdue ? "Overdue" : task.due}
+            value={overdue ? "Overdue" : task.dueAt ? dueStamp(task.dueAt) : "—"}
             tone={overdue ? "text-destructive" : undefined}
           />
-          <Metric label="Subject" value={task.subject} />
+          <Metric label="Subject" value={task.subject ?? "—"} />
           <Metric label="Target" value={task.target ? String(task.target) : "—"} />
         </div>
 
@@ -79,7 +78,7 @@ function Metric({
 
 /** Compact row used in the task list and the home feed. */
 export function TaskRow({ task }: { task: Task }) {
-  const overdue = isOverdue(task.dueAt) && task.status !== "Completed";
+  const overdue = isTaskOverdue(task);
 
   return (
     <Link
@@ -102,10 +101,15 @@ export function TaskRow({ task }: { task: Task }) {
           <h3 className="truncate text-sm font-bold">{task.title}</h3>
         </div>
         <p className="truncate font-mono text-[10px] uppercase tracking-tight text-muted-foreground">
-          {task.ward ?? task.lga} ·{" "}
-          <span className={cn(overdue && "font-bold text-destructive")}>
-            {overdue ? "OVERDUE" : dueStamp(task.dueAt)}
-          </span>
+          {task.location}
+          {task.dueAt && (
+            <>
+              {" · "}
+              <span className={cn(overdue && "font-bold text-destructive")}>
+                {overdue ? "OVERDUE" : dueStamp(task.dueAt)}
+              </span>
+            </>
+          )}
         </p>
       </div>
 

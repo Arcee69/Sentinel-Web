@@ -1,34 +1,212 @@
 /**
  * Domain model for SMHP Sentinel Connect (agent PWA).
  *
- * These shapes intentionally mirror the back-office (sentinel-backoffice) so
- * that everything an agent submits lands in the admin console without a
- * translation layer. Do not rename fields without changing the admin too.
+ * Two layers live here. The `Api*` shapes are what the Sentinel API returns,
+ * field for field. The plain shapes (`Task`, `ElectionReport`, …) are what the
+ * screens render; `services/agentService.ts` is the only place that maps one
+ * to the other, so a contract change stays out of the components.
  */
 
 /* -------------------------------------------------------------------------- */
-/*                                    Agent                                   */
+/*                                 API shapes                                 */
 /* -------------------------------------------------------------------------- */
 
-export type AgentRole = "LGA Supervisor" | "Ward Coordinator" | "Field Agent";
+export interface NotificationPreferences {
+  incidents: boolean;
+  assignments: boolean;
+  campaign_messages: boolean;
+}
 
-export type AgentStatus = "active" | "idle" | "offline";
+export interface ApiUser {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  last_login_at: string | null;
+  notification_preferences: NotificationPreferences;
+  email_verified_at: string | null;
+  created_at: string;
+}
+
+export interface ApiLoginResult {
+  user: ApiUser;
+  token: string;
+  token_type: string;
+  expires_at: string | null;
+}
+
+export interface ApiCampaign {
+  id: string;
+  organization_id: string;
+  geography_version_id: string;
+  name: string;
+  status: string;
+  access: { role: string; can_manage: boolean; can_work: boolean };
+}
+
+export interface ApiAssignment {
+  id: string;
+  campaign_id: string;
+  agent_membership_id: string;
+  geographic_unit_id: string;
+  duty: string;
+  starts_at: string;
+  /** Null while the assignment is active. */
+  ends_at: string | null;
+}
+
+export interface ApiGeographicUnit {
+  id: string;
+  name: string;
+  official_code: string;
+  kind: string;
+}
+
+export interface ApiContextOrganization {
+  organization: { id: string; name: string };
+  membership: { id: string; role: string };
+  campaigns: ApiCampaign[];
+  assignments: ApiAssignment[];
+  agent_profile: { phone: string | null; status: string } | null;
+  home_unit: ApiGeographicUnit | null;
+  stats: {
+    tasks_total: number;
+    tasks_completed: number;
+    field_reports: number;
+    polling_reports: number;
+    incidents: number;
+  };
+}
+
+export interface ApiAuthContext {
+  user: ApiUser;
+  organizations: ApiContextOrganization[];
+}
+
+export type ApiTaskStatus = "open" | "in_progress" | "completed" | "cancelled";
+
+export interface ApiTask {
+  id: string;
+  campaign_id: string;
+  assignment_id: string;
+  geographic_unit_id: string | null;
+  title: string;
+  instructions: string | null;
+  priority: "high" | "medium" | "low";
+  category: "opinion_poll" | "election_report" | "incident_report" | null;
+  subject: string | null;
+  target_count: number | null;
+  status: ApiTaskStatus;
+  due_at: string | null;
+  completed_at: string | null;
+  /** Send back as `expected_revision` on every transition. */
+  revision: number;
+}
+
+export interface ApiFieldReport {
+  id: string;
+  task_id: string | null;
+  activity_type: string;
+  collection_method: string | null;
+  people_reached: number | null;
+  narrative: string;
+  observed_at: string;
+  received_at: string;
+  client_submission_id: string;
+}
+
+export interface ApiPollingPlace {
+  id: string;
+  polling_occasion_id: string;
+  polling_unit_id: string;
+  official_code: string;
+  name: string;
+}
+
+export interface ApiPollingOccasion {
+  id: string;
+  name: string;
+  scheduled_on: string | null;
+  status: string;
+}
+
+export interface ApiPollingReport {
+  id: string;
+  polling_place_id: string;
+  polling_unit_id: string;
+  task_id: string | null;
+  subject: string | null;
+  operating_status: string | null;
+  reported_votes_cast: number | null;
+  notes: string | null;
+  review_state: string;
+  observed_at: string;
+  received_at: string;
+  participation: {
+    accredited_persons: number | null;
+    participating_persons: number | null;
+  } | null;
+}
+
+export interface ApiIncident {
+  id: string;
+  geographic_unit_id: string | null;
+  category: string | null;
+  incident_type: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  severity: string;
+  description: string;
+  status: string;
+  occurred_at: string;
+}
+
+export interface ApiNotification {
+  id: string;
+  title: string;
+  body: string;
+  kind: string;
+  read_at: string | null;
+  created_at: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Agent + workspace                             */
+/* -------------------------------------------------------------------------- */
 
 export interface Agent {
+  /** The user ID. */
   id: string;
   name: string;
   initials: string;
   email: string;
-  phone: string;
-  role: AgentRole;
-  state: string;
-  lga: string;
-  ward?: string;
-  /** Total reports submitted to date — shown on the profile. */
-  reports: number;
-  /** Task completion rate as a percentage, mirrors admin `taskPct`. */
-  taskPct: number;
-  status: AgentStatus;
+  phone: string | null;
+  /** Display form of the assignment duty, e.g. "Field Agent". */
+  role: string;
+  /** Agent profile status from the organization, e.g. "active". */
+  status: string;
+  /** Name of the agent's home geographic unit, e.g. "Lagos State". */
+  sector: string;
+  stats: {
+    tasksTotal: number;
+    tasksCompleted: number;
+    /** Field, polling and incident reports combined. */
+    reports: number;
+  };
+  notificationPreferences: NotificationPreferences;
+}
+
+/** The organization, campaign and assignment the agent is working under. */
+export interface Workspace {
+  organizationId: string;
+  organizationName: string;
+  membershipId: string;
+  campaignId: string;
+  campaignName: string;
+  /** Null when the agent has campaign access but no active assignment. */
+  assignmentId: string | null;
+  /** Geographic unit names known from context, keyed by unit ID. */
+  unitNames: Record<string, string>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -39,37 +217,32 @@ export type TaskCategory = "Opinion Poll" | "Election Report" | "Incident Report
 
 export type TaskPriority = "High" | "Medium" | "Low";
 
-export type TaskStatus = "Pending" | "In Progress" | "Completed";
+export type TaskStatus = "Pending" | "In Progress" | "Completed" | "Cancelled";
 
 export interface Task {
   id: string;
   title: string;
-  category: TaskCategory;
-  /** One of the fixed subjects belonging to `category`. */
-  subject: string;
+  /** Null for a general task the admin didn't categorise. */
+  category: TaskCategory | null;
+  /** Display label of the subject, or null when none was set. */
+  subject: string | null;
+  /** The API's subject code, used to preselect the matching form. */
+  subjectCode: string | null;
   priority: TaskPriority;
-  /** Display name of the assigned agent, as the admin stores it. */
-  assignee: string;
-  assigneeId: string;
-  state: string;
-  lga: string;
-  ward?: string;
-  pollingUnit?: string;
-  /** Human-readable due label the admin authored, e.g. "Today 6pm". */
-  due: string;
-  /** Machine-readable deadline, used for sorting and overdue detection. */
-  dueAt: string;
   status: TaskStatus;
-  campaignId?: string;
-  /** Free-text briefing from the admin. */
-  instructions?: string;
+  /** Name of the task's geographic unit, or the agent's sector. */
+  location: string;
+  dueAt: string | null;
+  completedAt: string | null;
+  instructions: string | null;
   /** Optional numeric goal, e.g. 200 voters polled. */
-  target?: number;
-  createdAt: string;
-  /** Set when the agent taps "Start Task". */
-  startedAt?: string;
-  completedAt?: string;
+  target: number | null;
+  assignmentId: string;
+  /** Optimistic-concurrency token; sent back on start/complete. */
+  revision: number;
 }
+
+export type TaskAction = "start" | "complete";
 
 /* -------------------------------------------------------------------------- */
 /*                                   Reports                                  */
@@ -82,28 +255,6 @@ export type ReportType =
   | "Media"
   | "Distribution";
 
-export interface TaskReport {
-  id: string;
-  taskId: string;
-  agentId: string;
-  /** Denormalised agent display name, matching the admin field-report feed. */
-  agent: string;
-  category: TaskCategory;
-  subject: string;
-  type: ReportType;
-  state: string;
-  lga: string;
-  /** Composed as "State/LGA" for the admin feed. */
-  location: string;
-  /** The narrative body of the report. */
-  body: string;
-  /** Headcount / respondents / turnout, when the subject calls for a number. */
-  respondents?: number;
-  media: MediaItem[];
-  submittedAt: string;
-  sync: SyncStatus;
-}
-
 /* -------------------------------------------------------------------------- */
 /*                              Election reports                              */
 /* -------------------------------------------------------------------------- */
@@ -111,52 +262,32 @@ export interface TaskReport {
 /** State of a polling unit at the moment the agent filed. */
 export type PollingUnitStatus =
   | "Open"
+  | "Delayed"
   | "Not opened"
   | "Closed"
   | "Suspended";
 
-/**
- * A ward/polling-unit return filed from the Election tab.
- *
- * Distinct from `TaskReport`: an election report can be filed on its own on
- * election day, without waiting for the admin to assign a task. When it does
- * answer an assigned task, `taskId` links the two and closes that task out.
- */
+export type ReviewState = "Pending review" | "Verified" | "Rejected" | "Revoked";
+
+/** A polling-unit return filed from the Election tab. */
 export interface ElectionReport {
   id: string;
-  agentId: string;
-  /** Denormalised agent display name, matching the admin field-report feed. */
-  agent: string;
-  /** Always "Election Report" — kept so the admin feed can bucket uniformly. */
-  category: TaskCategory;
-  /** One of the fixed Election Report subjects. */
-  subject: string;
-  /** Polling unit code, e.g. "AN/ON/04/012". */
-  unit: string;
-  state: string;
-  lga: string;
-  ward: string;
-  /** Composed as "State/LGA" for the admin feed. */
-  location: string;
-  unitStatus: PollingUnitStatus;
-  /** Voters accredited at the unit, when the subject calls for a number. */
-  accredited?: number;
-  /** Ballots cast at the unit — never more than `accredited`. */
-  votesCast?: number;
-  /** The narrative body of the return. */
-  body: string;
-  media: MediaItem[];
-  /** Set when the report answers an assigned Election Report task. */
-  taskId?: string;
-  submittedAt: string;
-  sync: SyncStatus;
+  /** One of the fixed Election Report subjects, or null for a general return. */
+  subject: string | null;
+  /** Polling unit code and/or name when known on this device. */
+  unitLabel: string | null;
+  unitStatus: PollingUnitStatus | null;
+  accredited: number | null;
+  votesCast: number | null;
+  notes: string | null;
+  reviewState: ReviewState;
+  taskId: string | null;
+  observedAt: string;
 }
 
 /* -------------------------------------------------------------------------- */
 /*                                  Incidents                                 */
 /* -------------------------------------------------------------------------- */
-
-export type IncidentType = "Violence" | "Delay" | "Malpractice" | "Logistics";
 
 export type IncidentSeverity = "Critical" | "High" | "Medium" | "Low";
 
@@ -164,23 +295,28 @@ export type IncidentStatus = "Open" | "Escalated" | "Resolved";
 
 export interface Incident {
   id: string;
-  type: IncidentType;
-  /** Specific allegation, drawn from the Incident Report subject list. */
+  /** Specific allegation, or the broad category when no type was recorded. */
   subject: string;
-  /** Polling unit code, e.g. "RV/PH/02/015". */
-  unit: string;
-  state: string;
-  lga: string;
+  /** Broad category the API filed it under, e.g. "Logistics". */
+  category: string | null;
+  unitLabel: string | null;
   severity: IncidentSeverity;
   status: IncidentStatus;
   description: string;
-  media: MediaItem[];
-  agentId: string;
-  agent: string;
-  /** Optional GPS fix captured at the time of reporting. */
-  coords?: { lat: number; lng: number };
-  reportedAt: string;
-  sync: SyncStatus;
+  coords: { lat: number; lng: number } | null;
+  occurredAt: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                Notifications                               */
+/* -------------------------------------------------------------------------- */
+
+export interface Notice {
+  id: string;
+  title: string;
+  body: string;
+  read: boolean;
+  createdAt: string;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -202,27 +338,33 @@ export interface MediaItem {
   duration?: number;
 }
 
+/** What a piece of evidence is attached to, as `/media/uploads` names it. */
+export type EvidenceParent = "field_report" | "polling_report" | "incident";
+
 /* -------------------------------------------------------------------------- */
 /*                                Sync + outbox                               */
 /* -------------------------------------------------------------------------- */
 
-/** Where a locally-created record stands relative to the server. */
-export type SyncStatus = "synced" | "queued" | "syncing" | "failed";
-
 export type OutboxKind =
-  | "report"
-  | "election-report"
-  | "incident"
-  | "task-status";
+  | "field-report"
+  | "polling-report"
+  | "incident-report"
+  | "task-transition"
+  | "evidence";
 
 export interface OutboxItem {
   id: string;
   kind: OutboxKind;
-  /** Payload shape depends on `kind`; the flusher narrows it. */
+  /** Payload shape depends on `kind`; the dispatcher narrows it. */
   payload: unknown;
   createdAt: string;
   attempts: number;
   lastError?: string;
+  /**
+   * Set when the server rejected the item outright (validation, permission,
+   * conflict). It stops retrying and waits for the agent to retry or discard.
+   */
+  failed?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -231,12 +373,8 @@ export interface OutboxItem {
 
 export interface Session {
   token: string;
+  /** ISO timestamp from the login response; null when the API gave none. */
+  expiresAt: string | null;
   agent: Agent;
-  issuedAt: string;
-}
-
-export interface LoginPayload {
-  /** The admin login accepts either — we mirror that. */
-  identifier: string;
-  password: string;
+  workspace: Workspace;
 }

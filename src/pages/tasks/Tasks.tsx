@@ -1,13 +1,11 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { ClipboardList } from "lucide-react";
 import PageHeader from "../../components/PageHeader";
 import { TaskRow } from "../../components/TaskCard";
 import { EmptyState, ErrorState, Skeleton } from "../../components/ui/States";
-import { useAgent } from "../../context/auth";
+import { useTasks } from "../../hooks/useTasks";
 import { TASK_STATUSES } from "../../lib/constants";
 import { cn } from "../../lib/format";
-import * as service from "../../services/agentService";
 import { errorMessage } from "../../services/instance";
 import type { TaskStatus } from "../../lib/types";
 
@@ -16,13 +14,8 @@ type Filter = "All" | TaskStatus;
 const FILTERS: Filter[] = ["All", ...TASK_STATUSES];
 
 export default function Tasks() {
-  const agent = useAgent();
   const [filter, setFilter] = useState<Filter>("All");
-
-  const tasksQuery = useQuery({
-    queryKey: ["tasks", agent.id],
-    queryFn: service.fetchTasks,
-  });
+  const tasksQuery = useTasks();
 
   const tasks = tasksQuery.data ?? [];
   const visible = filter === "All" ? tasks : tasks.filter((t) => t.status === filter);

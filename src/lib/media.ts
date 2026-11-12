@@ -26,9 +26,10 @@ export interface MediaIntakeResult {
   rejected: MediaRejection[];
 }
 
+/** Only the formats `/media/uploads` accepts; anything else would be rejected later. */
 function kindOf(file: File): "image" | "video" | null {
-  if (file.type.startsWith("image/")) return "image";
-  if (file.type.startsWith("video/")) return "video";
+  if (MEDIA_LIMITS.imageTypes.includes(file.type)) return "image";
+  if (MEDIA_LIMITS.videoTypes.includes(file.type)) return "video";
   return null;
 }
 
@@ -69,7 +70,7 @@ export async function intakeFiles(
 
     const kind = kindOf(file);
     if (!kind) {
-      rejected.push({ name: file.name, reason: "Only photos and videos" });
+      rejected.push({ name: file.name, reason: "Use JPEG/PNG photos or MP4/WebM/MOV video" });
       continue;
     }
 
@@ -128,22 +129,22 @@ export function releasePreviews(items: MediaItem[]): void {
   for (const item of items) URL.revokeObjectURL(item.url);
 }
 
-/** Packs media into FormData for the eventual real upload endpoint. */
-export async function toFormData(
-  payload: Record<string, unknown>,
-  media: MediaItem[],
-): Promise<FormData> {
-  const form = new FormData();
+/**
+ * The binary behind a media item: the persisted blob, or — when storage
+ * failed at intake — the live preview URL, which only works this session.
+ */
+export async function mediaBlob(item: MediaItem): Promise<Blob> {
+  const stored = await idbGet<StoredMedia>(STORES.media, item.id).catch(() => undefined);
+  if (stored) return stored.blob;
 
-  for (const [key, value] of Object.entries(payload)) {
-    if (value === undefined || value === null) continue;
-    form.append(key, typeof value === "string" ? value : JSON.stringify(value));
+  try {
+    return await (await fetch(item.url)).blob();
+  } catch {
+    throw new Error(`"${item.name}" is no longer on this device. Attach it again.`);
   }
+}
 
-  for (const item of media) {
-    const stored = await idbGet<StoredMedia>(STORES.media, item.id);
-    if (stored) form.append("media", stored.blob, item.name);
-  }
-
-  return form;
+/** Drops the stored blob once the server has it. */
+export async function forgetMedia(id: string): Promise<void> {
+  await idbDelete(STORES.media, id).catch(() => undefined);
 }

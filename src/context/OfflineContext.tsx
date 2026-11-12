@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { OfflineContext, type OfflineValue } from "./offline";
-import { enqueue, flushQueue, queueSize } from "../lib/outbox";
-import type { OutboxKind } from "../lib/types";
+import { OfflineContext, type OfflineValue, type SubmitOutcome } from "./offline";
+import { forgetMedia } from "../lib/media";
+import { deliver, discardItem, enqueue, flushQueue, listQueue, retryItem } from "../lib/outbox";
+import { toApiError } from "../services/errors";
+import { getToken } from "../services/session";
+import type { ProgressHandler } from "../services/agentService";
+import type { MediaItem, OutboxItem, OutboxKind } from "../lib/types";
 
-const OUTBOX_KEY = ["outbox", "count"];
+const OUTBOX_KEY = ["outbox"];
 
 export function OfflineProvider({ children }: { children: ReactNode }) {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
@@ -14,18 +18,21 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   // The queue lives in IndexedDB; react-query owns reading and re-reading it.
   const outboxQuery = useQuery({
     queryKey: OUTBOX_KEY,
-    queryFn: () => queueSize(),
-    initialData: 0,
+    queryFn: () => listQueue(),
+    initialData: [],
   });
-  const pending = outboxQuery.data;
+  const items = outboxQuery.data;
+  const pending = items.filter((item) => !item.failed).length;
+  const rejected = useMemo(() => items.filter((item) => item.failed), [items]);
 
-  const refreshPending = useCallback(async () => {
+  const refreshQueue = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: OUTBOX_KEY });
   }, [queryClient]);
 
   const sync = useCallback(async () => {
-    if (!navigator.onLine) return;
-    if ((await queueSize().catch(() => 0)) === 0) return;
+    // Signed out: replaying now would 401 and park every item as rejected.
+    if (!navigator.onLine || !getToken()) return;
+    if ((await listQueue()).every((item) => item.failed)) return;
 
     const result = await flushQueue();
 
@@ -33,24 +40,59 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       toast.success(
         `${result.sent} queued ${result.sent === 1 ? "submission" : "submissions"} synced`,
       );
-      // Server state moved — let every list refetch, the outbox count included.
+      // Server state moved — let every list refetch, the outbox included.
       await queryClient.invalidateQueries();
       return;
     }
 
-    await refreshPending();
+    await refreshQueue();
 
     if (result.failed > 0) {
-      toast.error("Couldn't sync queued work. We'll retry automatically.");
+      toast.error("Couldn't sync queued work. Check Profile for anything that needs attention.");
     }
-  }, [queryClient, refreshPending]);
+  }, [queryClient, refreshQueue]);
 
-  const queue = useCallback(
-    async (kind: OutboxKind, payload: unknown) => {
-      await enqueue(kind, payload);
-      await refreshPending();
+  const submit = useCallback(
+    async (kind: OutboxKind, payload: unknown, onProgress?: ProgressHandler) => {
+      const park = async (): Promise<SubmitOutcome> => {
+        await enqueue(kind, payload);
+        await refreshQueue();
+        return "queued";
+      };
+
+      if (!navigator.onLine) return park();
+
+      try {
+        const outcome = await deliver(kind, payload, onProgress);
+        if (outcome === "evidence-queued") await refreshQueue();
+        return outcome;
+      } catch (error) {
+        // Signal dropped mid-send: the payload carries its own idempotency
+        // keys, so replaying it later is safe.
+        if (toApiError(error).isNetwork) return park();
+        throw error;
+      }
     },
-    [refreshPending],
+    [refreshQueue],
+  );
+
+  const retry = useCallback(
+    async (item: OutboxItem) => {
+      await retryItem(item);
+      await refreshQueue();
+      await sync();
+    },
+    [refreshQueue, sync],
+  );
+
+  const discard = useCallback(
+    async (item: OutboxItem) => {
+      await discardItem(item.id);
+      const media = (item.payload as { media?: MediaItem[] } | null)?.media ?? [];
+      await Promise.all(media.map((m) => forgetMedia(m.id)));
+      await refreshQueue();
+    },
+    [refreshQueue],
   );
 
   useEffect(() => {
@@ -77,8 +119,8 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   }, [sync]);
 
   const value = useMemo<OfflineValue>(
-    () => ({ isOnline, pending, queue, sync, refreshPending }),
-    [isOnline, pending, queue, sync, refreshPending],
+    () => ({ isOnline, pending, rejected, submit, sync, retry, discard }),
+    [isOnline, pending, rejected, submit, sync, retry, discard],
   );
 
   return <OfflineContext.Provider value={value}>{children}</OfflineContext.Provider>;

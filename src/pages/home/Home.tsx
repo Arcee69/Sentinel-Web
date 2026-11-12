@@ -1,25 +1,23 @@
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { ClipboardList, FileText, MapPin, TriangleAlert, Vote } from "lucide-react";
+import NoticeBoard from "../../components/NoticeBoard";
 import ProgressRing from "../../components/ProgressRing";
 import { FeaturedTaskCard, TaskRow } from "../../components/TaskCard";
 import { EmptyState, ErrorState, Skeleton } from "../../components/ui/States";
 import { useAgent } from "../../context/auth";
+import { useTasks } from "../../hooks/useTasks";
 import { greeting } from "../../lib/format";
-import * as service from "../../services/agentService";
+import { isActionable } from "../../lib/tasks";
 import { errorMessage } from "../../services/instance";
 import type { Task } from "../../lib/types";
 
 export default function Home() {
   const agent = useAgent();
+  const tasksQuery = useTasks();
 
-  const tasksQuery = useQuery({
-    queryKey: ["tasks", agent.id],
-    queryFn: service.fetchTasks,
-  });
-
-  const tasks = tasksQuery.data ?? [];
-  const open = tasks.filter((t) => t.status !== "Completed");
+  // Cancelled work drops out of the quota entirely.
+  const tasks = (tasksQuery.data ?? []).filter((t) => t.status !== "Cancelled");
+  const open = tasks.filter((t) => isActionable(t.status));
   const completed = tasks.length - open.length;
   const quota = tasks.length ? Math.round((completed / tasks.length) * 100) : 0;
 
@@ -69,7 +67,7 @@ export default function Home() {
         </div>
 
         <div className="mt-4 grid grid-cols-3 gap-2 font-mono">
-          <Tile icon={<MapPin className="size-2.5" />} label="Sector" value={agent.lga} />
+          <Tile icon={<MapPin className="size-2.5" />} label="Sector" value={agent.sector} />
           <Tile
             icon={<ClipboardList className="size-2.5" />}
             label="Open"
@@ -78,7 +76,7 @@ export default function Home() {
           <Tile
             icon={<FileText className="size-2.5" />}
             label="Filed"
-            value={String(agent.reports)}
+            value={String(agent.stats.reports)}
           />
         </div>
       </header>
@@ -104,6 +102,8 @@ export default function Home() {
           Report Incident
         </Link>
       </div>
+
+      <NoticeBoard />
 
       <div className="space-y-3 px-4 pb-5 pt-4">
         <div className="flex items-center justify-between px-1">

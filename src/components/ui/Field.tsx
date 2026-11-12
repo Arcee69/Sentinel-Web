@@ -254,3 +254,33 @@ export function SelectField({
     </Field>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+
+interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "id" | "type"> {
+  label: string;
+  hint?: string;
+}
+
+export function CheckboxField({ label, hint, className, ...props }: CheckboxProps) {
+  const id = useId();
+
+  return (
+    <label
+      htmlFor={id}
+      className={cn(
+        "flex cursor-pointer items-start gap-3 rounded-sm border border-border bg-surface px-3 py-2.5",
+        props.disabled && "cursor-not-allowed opacity-60",
+        className,
+      )}
+    >
+      <input id={id} type="checkbox" className="mt-0.5 size-4 shrink-0 accent-primary" {...props} />
+      <span className="min-w-0">
+        <span className="block text-xs font-bold">{label}</span>
+        {hint && (
+          <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{hint}</span>
+        )}
+      </span>
+    </label>
+  );
+}

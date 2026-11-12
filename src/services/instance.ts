@@ -1,37 +1,30 @@
-import axios, { AxiosError } from "axios";
-import { STORAGE_KEYS } from "../lib/constants";
-import { mockAdapter } from "./mock/mockAdapter";
+import axios from "axios";
+import { toApiError } from "./errors";
+import { clearSession, getToken } from "./session";
 
-/**
- * Set `VITE_USE_MOCK_API=false` once the backend is live. Nothing else in the
- * app changes: the mock is installed as an axios adapter, so interceptors,
- * headers, status codes and error shapes are identical either way.
- */
-export const USE_MOCK_API = import.meta.env.VITE_USE_MOCK_API !== "false";
+export { errorMessage } from "./errors";
 
 const apiInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: import.meta.env.VITE_API_BASE_URL?.trim() ?? "",
+  // Field connections are slow; fail visibly rather than hang forever. Uploads
+  // override this per request.
+  timeout: 60_000,
   headers: {
+    Accept: "application/json",
     "Content-Type": "application/json",
   },
-  ...(USE_MOCK_API ? { adapter: mockAdapter } : {}),
 });
 
 /** Attaches the bearer token held in the persisted session. */
 apiInstance.interceptors.request.use((config) => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.session);
-    if (raw) {
-      const { token } = JSON.parse(raw) as { token?: string };
-      if (token) config.headers.Authorization = `Bearer ${token}`;
-    }
-  } catch {
-    /* unreadable session — send the request unauthenticated */
+  const token = getToken();
+  if (token && !config.headers.Authorization) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
 
   // Let the browser set the multipart boundary for media uploads.
   if (config.data instanceof FormData) {
-    delete config.headers["Content-Type"];
+    config.headers.delete("Content-Type");
   }
 
   return config;
@@ -40,60 +33,22 @@ apiInstance.interceptors.request.use((config) => {
 /** A rejected token means the session is gone — bounce to login. */
 apiInstance.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
-    const status = error.response?.status;
+  (error) => {
+    const apiError = toApiError(error);
 
     // 401 on the login call is just wrong credentials; don't treat it as an
     // expired session or the error would be replaced by a redirect.
-    const isLoginAttempt = error.config?.url?.includes("/auth/login");
+    const isLoginAttempt = error?.config?.url?.includes("/auth/login");
 
-    if (status === 401 && !isLoginAttempt) {
-      localStorage.removeItem(STORAGE_KEYS.session);
+    if (apiError.isUnauthorized && !isLoginAttempt && getToken()) {
+      clearSession();
       if (!window.location.pathname.startsWith("/login")) {
         window.location.assign("/login?expired=1");
       }
     }
 
-    return Promise.reject(error);
+    return Promise.reject(apiError);
   },
 );
-
-interface ApiErrorBody {
-  success?: boolean;
-  message?: string;
-}
-
-/**
- * Turns any thrown value into a sentence worth showing an agent. Prefers the
- * server's own message, falls back to something actionable per status.
- */
-export function errorMessage(error: unknown, fallback = "Something went wrong. Try again."): string {
-  if (!axios.isAxiosError(error)) {
-    return error instanceof Error ? error.message : fallback;
-  }
-
-  const serverMessage = (error.response?.data as ApiErrorBody | undefined)?.message;
-  if (serverMessage) return serverMessage;
-
-  if (error.code === AxiosError.ERR_NETWORK) {
-    return "Can't reach the server. Check your connection and try again.";
-  }
-
-  switch (error.response?.status) {
-    case 400:
-    case 422:
-      return "Some details weren't accepted. Check the form and try again.";
-    case 403:
-      return "You don't have access to that.";
-    case 404:
-      return "That record no longer exists.";
-    case 500:
-    case 502:
-    case 503:
-      return "The server is having trouble. Please try again shortly.";
-    default:
-      return fallback;
-  }
-}
 
 export default apiInstance;

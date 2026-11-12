@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Camera, Film, MapPin, Plus, ShieldAlert } from "lucide-react";
+import { Crosshair, MapPin, Plus, ShieldAlert } from "lucide-react";
 import PageHeader from "../../components/PageHeader";
 import Badge from "../../components/ui/Badge";
 import { EmptyState, ErrorState, Skeleton } from "../../components/ui/States";
-import { useAgent } from "../../context/auth";
+import { useWorkspace } from "../../context/auth";
 import { INCIDENT_STATUS_STYLES, SEVERITY_STYLES } from "../../lib/constants";
 import { timeAgo } from "../../lib/format";
 import * as service from "../../services/agentService";
@@ -12,11 +12,11 @@ import { errorMessage } from "../../services/instance";
 import type { Incident } from "../../lib/types";
 
 export default function Incidents() {
-  const agent = useAgent();
+  const workspace = useWorkspace();
 
   const incidentsQuery = useQuery({
-    queryKey: ["incidents", agent.id],
-    queryFn: service.fetchIncidents,
+    queryKey: ["incidents", workspace.campaignId],
+    queryFn: () => service.fetchIncidents(workspace.campaignId),
   });
 
   const incidents = incidentsQuery.data ?? [];
@@ -78,8 +78,7 @@ export default function Incidents() {
 }
 
 function IncidentCard({ incident }: { incident: Incident }) {
-  const photos = incident.media.filter((m) => m.kind === "image").length;
-  const videos = incident.media.filter((m) => m.kind === "video").length;
+  const where = [incident.unitLabel, incident.category].filter(Boolean).join(" · ");
 
   return (
     <article className="rounded-sm border border-border bg-surface p-4">
@@ -89,36 +88,28 @@ function IncidentCard({ incident }: { incident: Incident }) {
           <Badge tone={INCIDENT_STATUS_STYLES[incident.status]}>{incident.status}</Badge>
         </div>
         <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-          {timeAgo(incident.reportedAt)}
+          {timeAgo(incident.occurredAt)}
         </span>
       </div>
 
       <h3 className="text-sm font-bold">{incident.subject}</h3>
 
-      <p className="mt-1 flex items-center gap-1 font-mono text-[10px] uppercase tracking-tight text-muted-foreground">
-        <MapPin className="size-3 shrink-0" aria-hidden />
-        {incident.unit} · {incident.type}
-      </p>
+      {where && (
+        <p className="mt-1 flex items-center gap-1 font-mono text-[10px] uppercase tracking-tight text-muted-foreground">
+          <MapPin className="size-3 shrink-0" aria-hidden />
+          {where}
+        </p>
+      )}
 
       <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-muted-foreground">
         {incident.description}
       </p>
 
-      {(photos > 0 || videos > 0) && (
-        <div className="mt-3 flex items-center gap-3 border-t border-border pt-2.5 font-mono text-[10px] text-muted-foreground">
-          {photos > 0 && (
-            <span className="flex items-center gap-1">
-              <Camera className="size-3" aria-hidden />
-              {photos} photo{photos === 1 ? "" : "s"}
-            </span>
-          )}
-          {videos > 0 && (
-            <span className="flex items-center gap-1">
-              <Film className="size-3" aria-hidden />
-              {videos} video{videos === 1 ? "" : "s"}
-            </span>
-          )}
-        </div>
+      {incident.coords && (
+        <p className="mt-3 flex items-center gap-1 border-t border-border pt-2.5 font-mono text-[10px] text-muted-foreground">
+          <Crosshair className="size-3" aria-hidden />
+          {incident.coords.lat}, {incident.coords.lng}
+        </p>
       )}
     </article>
   );
