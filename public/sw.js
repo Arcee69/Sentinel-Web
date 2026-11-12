@@ -10,7 +10,7 @@
  *                     offline writes, and stale reads would mislead the agent.
  */
 
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL_CACHE = `sentinel-shell-${VERSION}`;
 const ASSET_CACHE = `sentinel-assets-${VERSION}`;
 

@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 frontend-integration-guide.md
+.kilo
 
 # Editor directories and files
 .vscode/*

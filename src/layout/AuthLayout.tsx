@@ -1,5 +1,6 @@
 import { Outlet } from "react-router-dom";
-import { ShieldCheck } from "lucide-react";
+import markPrimary from "../assets/svg/mark-primary.svg";
+import markReverse from "../assets/svg/mark-reverse.svg";
 import PhoneFrame from "./PhoneFrame";
 
 /** Wrapper for login and the password-recovery flow. */
@@ -9,12 +10,9 @@ export default function AuthLayout() {
       <div className="no-scrollbar flex flex-1 flex-col overflow-y-auto">
         <header className="safe-top border-b border-border bg-surface px-6 pb-6">
           <div className="flex items-center gap-2.5">
-            <span
-              className="flex size-9 items-center justify-center rounded-sm bg-primary text-primary-foreground"
-              aria-hidden
-            >
-              <ShieldCheck className="size-5" />
-            </span>
+            {/* Navy mark on light surfaces, white on dark — the ember half is shared. */}
+            <img src={markPrimary} alt="" className="h-9 w-auto dark:hidden" />
+            <img src={markReverse} alt="" className="hidden h-9 w-auto dark:block" />
             <div>
               <p className="font-display text-sm font-bold leading-none">SMHP Sentinel</p>
               <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">

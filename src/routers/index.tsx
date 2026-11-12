@@ -2,7 +2,6 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "../layout/AppLayout";
 import AuthLayout from "../layout/AuthLayout";
 import ProtectedRoute, { PublicOnlyRoute } from "./ProtectedRoute";
-import Landing from "../pages/landing/Landing";
 import Elections from "../pages/elections/Elections";
 import SubmitElectionReport from "../pages/elections/SubmitElectionReport";
 import ForgotPassword, { ResetPassword } from "../pages/auth/ForgotPassword/ForgotPassword";
@@ -18,9 +17,6 @@ import Tasks from "../pages/tasks/Tasks";
 export default function Routers() {
   return (
     <Routes>
-      {/* Public marketing site — always reachable, signed in or not. */}
-      <Route path="/" element={<Landing />} />
-
       {/* Auth — no self-registration; accounts come from the back office. */}
       <Route element={<PublicOnlyRoute />}>
         <Route element={<AuthLayout />}>
@@ -45,7 +41,9 @@ export default function Routers() {
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* The marketing site lives on its own domain; everything else, the root
+          included, resolves to home — or to sign-in via ProtectedRoute. */}
+      <Route path="*" element={<Navigate to="/app" replace />} />
     </Routes>
   );
 }
